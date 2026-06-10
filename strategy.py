@@ -5,124 +5,137 @@ from alerts import send_alert
 
 class BreakoutAlert:
     def __init__(self):
-        self.last_price = defaultdict(float)
-        self.prev_change = defaultdict(float)
-        self.last_alert_time = defaultdict(float)
-        self.price_history = defaultdict(lambda: deque(maxlen=20))
-        self.volume_history = defaultdict(lambda: deque(maxlen=20))
+        self.price_history = defaultdict(lambda: deque(maxlen=100))
+        self.volume_history = defaultdict(lambda: deque(maxlen=100))
 
-        self.COOLDOWN = 60
-        self.MIN_MOVE = 0.15
-        self.BREAKOUT_MOVE = 0.4
+        self.last_alert_time = defaultdict(float)
+
+        self.COOLDOWN = 60   # seconds
+        self.BREAKOUT_LOOKBACK = 20
         self.VOLUME_MULTIPLIER = 1.5
 
-    def calculate_rsi(self, prices):
-        if len(prices) < 14:
+    # ✅ RSI
+    def calculate_rsi(self, prices, period=14):
+        if len(prices) < period + 1:
             return 50
 
-        gains = []
-        losses = []
+        gains, losses = 0, 0
 
-        for i in range(1, len(prices)):
-            diff = prices[i] - prices[i - 1]
+        for i in range(-period, 0):
+            diff = prices[i] - prices[i-1]
             if diff > 0:
-                gains.append(diff)
+                gains += diff
             else:
-                losses.append(abs(diff))
+                losses += abs(diff)
 
-        avg_gain = sum(gains[-14:]) / 14 if gains else 0
-        avg_loss = sum(losses[-14:]) / 14 if losses else 0
-
-        if avg_loss == 0:
+        if losses == 0:
             return 100
 
-        rs = avg_gain / avg_loss
+        rs = gains / losses
         return 100 - (100 / (1 + rs))
 
+    # ✅ VWAP (approx using price only)
+    def calculate_vwap(self, prices):
+        return sum(prices) / len(prices) if prices else 0
+
+    # ✅ Volume Spike
+    def volume_spike(self, symbol, volume):
+        vols = self.volume_history[symbol]
+        if len(vols) < 10:
+            return False
+
+        avg_vol = sum(vols) / len(vols)
+        return volume > avg_vol * self.VOLUME_MULTIPLIER
+
+    # ✅ Breakout Detection
+    def is_breakout(self, symbol, price):
+        prices = self.price_history[symbol]
+
+        if len(prices) < self.BREAKOUT_LOOKBACK:
+            return False, None
+
+        recent_high = max(list(prices)[-self.BREAKOUT_LOOKBACK:])
+        recent_low = min(list(prices)[-self.BREAKOUT_LOOKBACK:])
+
+        if price > recent_high:
+            return True, "UP"
+
+        if price < recent_low:
+            return True, "DOWN"
+
+        return False, None
+
+    # ✅ Momentum
+    def momentum(self, prices):
+        if len(prices) < 3:
+            return 0
+
+        return prices[-1] - prices[-3]
+
+    # ✅ MAIN FUNCTION
     def update(self, symbol, price, volume):
 
         print(f"{symbol} | {price}")
 
-        # ✅ store price & volume
         self.price_history[symbol].append(price)
         self.volume_history[symbol].append(volume)
 
-        if self.last_price[symbol] == 0:
-            self.last_price[symbol] = price
-            return
-
-        prev = self.last_price[symbol]
-        change = price - prev
         now = time.time()
-
-        # ✅ Noise filter
-        if abs(change) < self.MIN_MOVE:
-            self.last_price[symbol] = price
-            return
 
         # ✅ Cooldown
         if now - self.last_alert_time[symbol] < self.COOLDOWN:
-            self.last_price[symbol] = price
             return
 
-        prev_change = self.prev_change[symbol]
+        prices = self.price_history[symbol]
 
-        # ✅ Momentum confirmation
-        if not ((prev_change > 0 and change > 0) or (prev_change < 0 and change < 0)):
-            self.prev_change[symbol] = change
-            self.last_price[symbol] = price
-            return
+        # ✅ Indicators
+        rsi = self.calculate_rsi(prices)
+        vwap = self.calculate_vwap(prices)
+        momentum = self.momentum(prices)
+        breakout, direction = self.is_breakout(symbol, price)
+        vol_spike = self.volume_spike(symbol, volume)
 
-        # ✅ Volume check
-        avg_vol = sum(self.volume_history[symbol]) / max(len(self.volume_history[symbol]), 1)
-        if volume < avg_vol * self.VOLUME_MULTIPLIER:
-            return
+        # ✅ HYBRID LOGIC
 
-        # ✅ RSI filter
-        rsi = self.calculate_rsi(self.price_history[symbol])
+        if breakout and vol_spike:
 
-        # ✅ Direction
-        direction = "UP" if change > 0 else "DOWN"
+            # ✅ FILTERS
+            if direction == "UP":
+                if rsi < 55 or price < vwap:
+                    return
 
-        # =========================
-        # 🔥 BREAKOUT SIGNAL
-        # =========================
-        if abs(change) > self.BREAKOUT_MOVE:
-
-            # ✅ RSI filter conditions
-            if direction == "UP" and rsi < 55:
-                return
-            if direction == "DOWN" and rsi > 45:
-                return
+            elif direction == "DOWN":
+                if rsi > 45 or price > vwap:
+                    return
 
             msg = (
                 f"🔥 BREAKOUT {direction}\n"
                 f"{symbol}\n"
                 f"Price: {price}\n"
-                f"Move: {round(change, 2)}\n"
                 f"RSI: {round(rsi, 1)}\n"
+                f"VWAP: {round(vwap, 2)}\n"
+                f"Momentum: {round(momentum, 2)}\n"
                 f"Volume Spike ✅"
             )
 
             print(msg)
             send_alert(msg)
+
             self.last_alert_time[symbol] = now
 
-        # =========================
-        # ⚡ MOMENTUM SIGNAL
-        # =========================
-        elif abs(change) > self.MIN_MOVE:
+        # ✅ OPTIONAL MOMENTUM SIGNAL
+        elif abs(momentum) > 0.3:
+
+            direction = "UP" if momentum > 0 else "DOWN"
 
             msg = (
                 f"⚡ MOMENTUM {direction}\n"
                 f"{symbol}\n"
                 f"Price: {price}\n"
-                f"Move: {round(change, 2)}"
+                f"Momentum: {round(momentum, 2)}"
             )
 
             print(msg)
             send_alert(msg)
-            self.last_alert_time[symbol] = now
 
-        self.prev_change[symbol] = change
-        self.last_price[symbol] = price
+            self.last_alert_time[symbol] = now
