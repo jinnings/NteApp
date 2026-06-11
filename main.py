@@ -4,15 +4,15 @@ import time
 from strategy import MultiSignalStrategy
 from config import ACCESS_TOKEN
 from mapping import MAPPING
-from alerts import send_alert  # ✅ added
+from alerts import send_alert
 
 strategy = MultiSignalStrategy()
 
 print("🚀 Bot running ✅")
 
 last_summary = 0
+last_scan_alert = 0   # ✅ time-based tracking
 last_prices = {}
-scan_counter = 0   # ✅ NEW
 
 
 def get_prices_batch():
@@ -59,10 +59,8 @@ def get_prices_batch():
                 print("⚠️ Empty market data for batch")
                 continue
 
-            # ✅ USE SYMBOL FROM RESPONSE
             for instrument_key, value in data["data"].items():
-
-                symbol = value.get("symbol")  # NHPC, ZOMATO
+                symbol = value.get("symbol")
 
                 if not symbol:
                     continue
@@ -96,30 +94,27 @@ while True:
 
             strategy.update(symbol, price, volume)
 
-            # ✅ example tracking
             if symbol == "ZOMATO":
                 print(f"📊 ZOMATO CMP: ₹{price} | Vol: {volume}")
 
-        # ✅ ✅ SCAN COUNTER LOGIC
-        scan_counter += 1
+        now = time.time()
 
-        if scan_counter >= 3:
+        # ✅ terminal summary
+        if now - last_summary > 60:
+            print(f"📊 Running | {len(prices)} stocks ✅")
+            last_summary = now
+
+        # ✅ ✅ TELEGRAM NOTIFICATION EVERY 5 MINUTES
+        if now - last_scan_alert > 300:
             send_alert(f"""
-🔄 Scan Completed ✅
+🔄 Scan Update ✅
 
 📊 Stocks scanned: {len(prices)}
 ⏱ Time: {time.strftime('%H:%M:%S')}
 
 ✅ Bot running smoothly 🚀
 """)
-            scan_counter = 0  # reset
-
-        now = time.time()
-
-        # ✅ summary every 1 min
-        if now - last_summary > 60:
-            print(f"📊 Running | {len(prices)} stocks ✅")
-            last_summary = now
+            last_scan_alert = now
 
     except Exception as e:
         print("❌ MAIN LOOP ERROR:", e)
