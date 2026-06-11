@@ -10,11 +10,15 @@ class MultiSignalStrategy:
 
         self.filename = "price_data.pkl"
 
-        # ✅ Load saved data
+        # ✅ SAFE LOAD (prevents crash)
         if os.path.exists(self.filename):
-            with open(self.filename, "rb") as f:
-                self.price_history = pickle.load(f)
-            print("✅ Loaded previous data")
+            try:
+                with open(self.filename, "rb") as f:
+                    self.price_history = pickle.load(f)
+                print("✅ Loaded previous data")
+            except Exception:
+                print("⚠️ Corrupted file detected — starting fresh")
+                self.price_history = defaultdict(lambda: deque(maxlen=100))
         else:
             self.price_history = defaultdict(lambda: deque(maxlen=100))
 
@@ -23,13 +27,19 @@ class MultiSignalStrategy:
         self.COOLDOWN = 60
         self.BREAKOUT_LOOKBACK = 20
 
+    # ✅ SAFE SAVE (atomic write)
     def save_data(self):
+        temp_file = self.filename + ".tmp"
         try:
-            with open(self.filename, "wb") as f:
+            with open(temp_file, "wb") as f:
                 pickle.dump(self.price_history, f)
-        except Exception as e:
-            print("Save error:", e)
 
+            os.replace(temp_file, self.filename)
+
+        except Exception as e:
+            print("❌ Save error:", e)
+
+    # ✅ RSI
     def calculate_rsi(self, prices, period=14):
         if len(prices) < period + 1:
             return 50
@@ -48,18 +58,22 @@ class MultiSignalStrategy:
         rs = gains / losses
         return 100 - (100 / (1 + rs))
 
+    # ✅ VWAP
     def calculate_vwap(self, prices):
         return sum(prices) / len(prices)
 
+    # ✅ Momentum
     def momentum(self, prices):
         if len(prices) < 3:
             return 0
         return prices[-1] - prices[-3]
 
+    # ✅ Breakout
     def breakout_levels(self, prices):
         recent = list(prices)[-self.BREAKOUT_LOOKBACK:]
         return max(recent), min(recent)
 
+    # ✅ Volume spike (price-based)
     def volume_spike(self, prices):
         if len(prices) < 5:
             return False
@@ -95,33 +109,21 @@ class MultiSignalStrategy:
 
         signals = []
 
-        # =========================
         # ✅ FILTERED MOMENTUM
-        # =========================
         if abs(momentum) > 1.2:
-
-            mid = (high + low) / 2
-
-            # ✅ ignore middle zone
-            if abs(price - high) > 1 and abs(price - low) > 1:
-                pass
-            else:
+            if abs(price - high) <= 1 or abs(price - low) <= 1:
                 if momentum > 0 and (rsi > 55 and price > vwap):
                     signals.append("⚡ MOMENTUM UP (STRONG)")
                 elif momentum < 0 and (rsi < 45 and price < vwap):
                     signals.append("⚡ MOMENTUM DOWN (STRONG)")
 
-        # =========================
-        # 🔥 BREAKOUT
-        # =========================
+        # ✅ BREAKOUT
         if price > high:
             signals.append("🔥 BREAKOUT UP")
         elif price < low:
             signals.append("🔥 BREAKOUT DOWN")
 
-        # =========================
-        # 🟢 BUY / 🔴 SELL
-        # =========================
+        # ✅ BUY / SELL
         if price > high and vol_spike:
             if price > vwap and rsi > 55 and momentum > 0:
                 signals.append("🟢 BUY SIGNAL")
@@ -146,6 +148,6 @@ class MultiSignalStrategy:
 
             self.last_alert_time[symbol] = now
 
-        # ✅ Save every few seconds
+        # ✅ SAVE EVERY ~10 SECONDS
         if int(time.time()) % 10 == 0:
             self.save_data()
