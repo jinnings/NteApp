@@ -21,4 +21,3 @@ if now - strategy.runner_alert_time > 120:
         send_alert("⚠️ No pullback runners available")
 
     strategy.runner_alert_time = now
-``
