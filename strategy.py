@@ -10,6 +10,7 @@ class MultiSignalStrategy:
 
         self.filename = "price_data.pkl"
 
+        # ✅ Load saved data
         if os.path.exists(self.filename):
             with open(self.filename, "rb") as f:
                 self.price_history = pickle.load(f)
@@ -73,11 +74,13 @@ class MultiSignalStrategy:
         self.price_history[symbol].append(price)
         prices = self.price_history[symbol]
 
+        # ✅ Ignore noise
         if len(prices) > 1 and abs(price - prices[-2]) < 0.2:
             return
 
         now = time.time()
 
+        # ✅ cooldown
         if now - self.last_alert_time[symbol] < self.COOLDOWN:
             return
 
@@ -92,15 +95,33 @@ class MultiSignalStrategy:
 
         signals = []
 
-        if abs(momentum) > 1:
-            direction = "UP" if momentum > 0 else "DOWN"
-            signals.append(f"⚡ MOMENTUM {direction}")
+        # =========================
+        # ✅ FILTERED MOMENTUM
+        # =========================
+        if abs(momentum) > 1.2:
 
+            mid = (high + low) / 2
+
+            # ✅ ignore middle zone
+            if abs(price - high) > 1 and abs(price - low) > 1:
+                pass
+            else:
+                if momentum > 0 and (rsi > 55 and price > vwap):
+                    signals.append("⚡ MOMENTUM UP (STRONG)")
+                elif momentum < 0 and (rsi < 45 and price < vwap):
+                    signals.append("⚡ MOMENTUM DOWN (STRONG)")
+
+        # =========================
+        # 🔥 BREAKOUT
+        # =========================
         if price > high:
             signals.append("🔥 BREAKOUT UP")
         elif price < low:
             signals.append("🔥 BREAKOUT DOWN")
 
+        # =========================
+        # 🟢 BUY / 🔴 SELL
+        # =========================
         if price > high and vol_spike:
             if price > vwap and rsi > 55 and momentum > 0:
                 signals.append("🟢 BUY SIGNAL")
@@ -109,6 +130,7 @@ class MultiSignalStrategy:
             if price < vwap and rsi < 45 and momentum < 0:
                 signals.append("🔴 SELL SIGNAL")
 
+        # ✅ SEND ALERT
         if signals:
             msg = f"""
 📊 {symbol}
@@ -124,4 +146,6 @@ class MultiSignalStrategy:
 
             self.last_alert_time[symbol] = now
 
-        self.save_data()
+        # ✅ Save every few seconds
+        if int(time.time()) % 10 == 0:
+            self.save_data()
