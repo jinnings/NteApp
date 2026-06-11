@@ -3,7 +3,7 @@ import requests
 API_KEY = "b441d269-3828-408e-95ce-33964e359c98"
 API_SECRET = "1mns0p4y1v"
 REDIRECT_URI = "https://127.0.0.1:5000/"
-CODE = "Km-y07"
+CODE = "b-YPup"
 
 url = "https://api.upstox.com/v2/login/authorization/token"
 
