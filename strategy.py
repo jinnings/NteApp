@@ -38,6 +38,7 @@ class MultiSignalStrategy:
     def calculate_rsi(self, prices):
         if len(prices) < 15:
             return 50
+
         gains, losses = 0, 0
         for i in range(-14, 0):
             diff = prices[i] - prices[i - 1]
@@ -45,8 +46,10 @@ class MultiSignalStrategy:
                 gains += diff
             else:
                 losses += abs(diff)
+
         if losses == 0:
             return 100
+
         rs = gains / losses
         return 100 - (100 / (1 + rs))
 
@@ -65,8 +68,10 @@ class MultiSignalStrategy:
     def volume_spike(self, symbol, volume):
         self.volume_history[symbol].append(volume)
         vols = self.volume_history[symbol]
+
         if len(vols) < 5:
             return False
+
         avg = sum(list(vols)[-5:]) / 5
         return volume > avg * 1.5
 
@@ -97,22 +102,27 @@ class MultiSignalStrategy:
         direction = None
         score = 0
 
+        # ✅ BUY
         if price >= high * 0.998:
             if (rsi > 55 and price > vwap) or vol_spike:
                 direction = "BUY"
                 score += 20
 
+        # ✅ SELL
         elif price <= low * 1.002:
             if (rsi < 45 and price < vwap) or vol_spike:
                 direction = "SELL"
                 score += 20
 
+        # ✅ Momentum boost
         if abs(momentum) > 2:
             score += 10
 
-        if direction is None:
+        # ✅ ✅ FILTER (IMPORTANT)
+        if direction is None or score < 20:
             return
 
+        # ✅ Entry / SL / Target
         if direction == "BUY":
             entry = price
             sl = low
@@ -124,6 +134,7 @@ class MultiSignalStrategy:
 
         rating = "🔥 VERY HIGH" if score >= 30 else "✅ HIGH"
 
+        # ✅ SEND ALERT
         msg = f"""
 🚨 LIVE TRADE SIGNAL 🚨
 
@@ -139,6 +150,7 @@ class MultiSignalStrategy:
         print(msg)
         send_alert(msg)
 
+        # ✅ store for summary
         self.live_candidates.append({
             "symbol": symbol,
             "price": round(entry, 2),
