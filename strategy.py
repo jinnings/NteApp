@@ -25,10 +25,11 @@ class MultiSignalStrategy:
         self.volume_history = defaultdict(lambda: deque(maxlen=20))
         self.last_alert_time = defaultdict(float)
 
-        self.COOLDOWN = 60
+        # ✅ tuned settings
+        self.COOLDOWN = 180  # 3 minutes
         self.BREAKOUT_LOOKBACK = 20
 
-    # ✅ safe save (atomic)
+    # ✅ safe save
     def save_data(self):
         temp_file = self.filename + ".tmp"
         try:
@@ -37,6 +38,12 @@ class MultiSignalStrategy:
             os.replace(temp_file, self.filename)
         except Exception as e:
             print("Save error:", e)
+
+    # ✅ price % change
+    def price_change_percent(self, prices):
+        if len(prices) < 5:
+            return 0
+        return ((prices[-1] - prices[-5]) / prices[-5]) * 100
 
     def calculate_rsi(self, prices, period=14):
         if len(prices) < period + 1:
@@ -68,9 +75,8 @@ class MultiSignalStrategy:
         recent = list(prices)[-self.BREAKOUT_LOOKBACK:]
         return max(recent), min(recent)
 
-    # ✅ REAL volume spike
+    # ✅ stronger volume spike
     def volume_spike(self, symbol, volume):
-
         self.volume_history[symbol].append(volume)
         vols = self.volume_history[symbol]
 
@@ -78,18 +84,24 @@ class MultiSignalStrategy:
             return False
 
         avg_vol = sum(list(vols)[-5:]) / 5
-        return volume > avg_vol * 2
+        return volume > avg_vol * 2.5   # ✅ stricter
 
     def update(self, symbol, price, volume):
+
+        # ✅ ELITE FILTER (removes junk stocks)
+        if volume < 200000:
+            return
 
         self.price_history[symbol].append(price)
         prices = self.price_history[symbol]
 
-        if len(prices) > 1 and abs(price - prices[-2]) < 0.2:
+        # ✅ ignore tiny moves
+        if len(prices) > 1 and abs(price - prices[-2]) < 0.3:
             return
 
         now = time.time()
 
+        # ✅ cooldown
         if now - self.last_alert_time[symbol] < self.COOLDOWN:
             return
 
@@ -101,32 +113,42 @@ class MultiSignalStrategy:
         momentum = self.momentum(prices)
         high, low = self.breakout_levels(prices)
         vol_spike = self.volume_spike(symbol, volume)
+        change_pct = self.price_change_percent(prices)
 
         signals = []
 
-        # ✅ filtered momentum
-        if abs(momentum) > 1.2:
-            if abs(price - high) <= 1 or abs(price - low) <= 1:
-                if momentum > 0 and rsi > 55 and price > vwap:
+        # ✅ FINAL QUALITY FILTER
+        if change_pct < 0.8:
+            return
+
+        # ✅ STRONG MOMENTUM ONLY
+        if abs(momentum) > 2 and change_pct > 0.8:
+
+            # ✅ strict breakout proximity
+            if price >= high * 0.998:
+
+                if momentum > 0 and rsi > 60 and price > vwap:
                     signals.append("⚡ MOMENTUM UP (STRONG)")
-                elif momentum < 0 and rsi < 45 and price < vwap:
+
+                elif momentum < 0 and rsi < 40 and price < vwap:
                     signals.append("⚡ MOMENTUM DOWN (STRONG)")
 
-        # ✅ breakout
+        # ✅ breakout signal
         if price > high:
             signals.append("🔥 BREAKOUT UP")
         elif price < low:
             signals.append("🔥 BREAKOUT DOWN")
 
-        # ✅ BUY / SELL with volume confirmation
+        # ✅ BUY / SELL confirmation
         if price > high and vol_spike:
-            if price > vwap and rsi > 55 and momentum > 0:
+            if price > vwap and rsi > 60 and momentum > 0:
                 signals.append("🟢 BUY SIGNAL")
 
         if price < low and vol_spike:
-            if price < vwap and rsi < 45 and momentum < 0:
+            if price < vwap and rsi < 40 and momentum < 0:
                 signals.append("🔴 SELL SIGNAL")
 
+        # ✅ send alerts
         if signals:
             msg = f"""
 📊 {symbol}
@@ -137,12 +159,13 @@ class MultiSignalStrategy:
 📈 RSI: {round(rsi,1)}
 📊 VWAP: {round(vwap,2)}
 📦 Volume: {volume}
+📊 Change: {round(change_pct,2)}%
 """
             print(msg)
             send_alert(msg)
 
             self.last_alert_time[symbol] = now
 
-        # ✅ save periodically
+        # ✅ periodic save
         if int(time.time()) % 10 == 0:
             self.save_data()
