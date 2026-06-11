@@ -2,18 +2,20 @@ import requests
 import time
 
 from strategy import MultiSignalStrategy
-
-strategy = MultiSignalStrategy()
 from config import ACCESS_TOKEN
 from mapping import MAPPING
+from alerts import send_alert
 
-# ✅ Init
+# ✅ init
 strategy = MultiSignalStrategy()
 
-strategy = MultiSignalStrategy()
-
-# ✅ Use all stocks
 STOCKS = list(MAPPING.keys())
+
+last_summary = 0
+last_telegram = 0
+
+# ✅ restart alert (only once)
+send_alert("⚠️ Bot started / restarted ✅")
 
 
 def get_prices():
@@ -40,7 +42,7 @@ def get_prices():
             if "data" in data and symbol in data["data"]:
                 prices[symbol] = data["data"][symbol]["last_price"]
 
-        except Exception:
+        except:
             continue
 
     return prices
@@ -48,23 +50,42 @@ def get_prices():
 
 print("🚀 Bot running ✅")
 
-last_summary = 0
 
 while True:
     try:
         prices = get_prices()
 
+        if not prices:
+            print("⚠️ No data from API — retrying...")
+            time.sleep(10)
+            continue
+
         for symbol, price in prices.items():
+
+            # ✅ Run strategy
             strategy.update(symbol, price, 1)
+
+            # ✅ Print ONLY ZOMATO CMP (monitoring)
+            if symbol == "NSE_EQ:ZOMATO":
+                print(f"📊 ZOMATO CMP: ₹{price}")
 
         # ✅ Summary every 60 sec
         now = time.time()
         if now - last_summary > 60:
             print(f"📊 Running | {len(prices)} stocks ✅")
+
+            if "NSE_EQ:ZOMATO" in prices:
+                print(f"📊 ZOMATO CMP: ₹{prices['NSE_EQ:ZOMATO']}")
+
             last_summary = now
+
+        # ✅ Telegram heartbeat every 5 minutes
+        if now - last_telegram > 300:
+            send_alert(f"📊 Bot running | {len(prices)} stocks ✅")
+            last_telegram = now
 
     except Exception as e:
         print("❌ ERROR:", e)
+        time.sleep(5)
 
-    # ✅ tuned for 40–60 stocks
     time.sleep(6)

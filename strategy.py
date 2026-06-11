@@ -1,17 +1,34 @@
 from collections import defaultdict, deque
 import time
 from alerts import send_alert
+import pickle
+import os
 
 
 class MultiSignalStrategy:
     def __init__(self):
-        self.price_history = defaultdict(lambda: deque(maxlen=100))
+
+        self.filename = "price_data.pkl"
+
+        if os.path.exists(self.filename):
+            with open(self.filename, "rb") as f:
+                self.price_history = pickle.load(f)
+            print("✅ Loaded previous data")
+        else:
+            self.price_history = defaultdict(lambda: deque(maxlen=100))
+
         self.last_alert_time = defaultdict(float)
 
         self.COOLDOWN = 60
         self.BREAKOUT_LOOKBACK = 20
 
-    # ✅ RSI
+    def save_data(self):
+        try:
+            with open(self.filename, "wb") as f:
+                pickle.dump(self.price_history, f)
+        except Exception as e:
+            print("Save error:", e)
+
     def calculate_rsi(self, prices, period=14):
         if len(prices) < period + 1:
             return 50
@@ -30,22 +47,18 @@ class MultiSignalStrategy:
         rs = gains / losses
         return 100 - (100 / (1 + rs))
 
-    # ✅ VWAP
     def calculate_vwap(self, prices):
         return sum(prices) / len(prices)
 
-    # ✅ Momentum
     def momentum(self, prices):
         if len(prices) < 3:
             return 0
         return prices[-1] - prices[-3]
 
-    # ✅ Breakout levels
     def breakout_levels(self, prices):
         recent = list(prices)[-self.BREAKOUT_LOOKBACK:]
         return max(recent), min(recent)
 
-    # ✅ Fake volume spike
     def volume_spike(self, prices):
         if len(prices) < 5:
             return False
@@ -55,19 +68,16 @@ class MultiSignalStrategy:
 
         return move > avg * 1.5
 
-    # ✅ MAIN
     def update(self, symbol, price, volume):
 
         self.price_history[symbol].append(price)
         prices = self.price_history[symbol]
 
-        # ✅ Noise filter
         if len(prices) > 1 and abs(price - prices[-2]) < 0.2:
             return
 
         now = time.time()
 
-        # ✅ Cooldown (global per symbol)
         if now - self.last_alert_time[symbol] < self.COOLDOWN:
             return
 
@@ -80,46 +90,29 @@ class MultiSignalStrategy:
         high, low = self.breakout_levels(prices)
         vol_spike = self.volume_spike(prices)
 
-        signals = []  # ✅ collect all signals
+        signals = []
 
-        # =========================
-        # ⚡ MOMENTUM
-        # =========================
         if abs(momentum) > 1:
             direction = "UP" if momentum > 0 else "DOWN"
+            signals.append(f"⚡ MOMENTUM {direction}")
 
-            signals.append(
-                f"⚡ MOMENTUM {direction}\n"
-                f"Move: {round(momentum,2)}"
-            )
-
-        # =========================
-        # 🔥 BREAKOUT
-        # =========================
         if price > high:
             signals.append("🔥 BREAKOUT UP")
         elif price < low:
             signals.append("🔥 BREAKOUT DOWN")
 
-        # =========================
-        # 🟢🔴 INTRADAY SIGNAL
-        # =========================
-
-        # ✅ BUY
         if price > high and vol_spike:
             if price > vwap and rsi > 55 and momentum > 0:
                 signals.append("🟢 BUY SIGNAL")
 
-        # ✅ SELL
         if price < low and vol_spike:
             if price < vwap and rsi < 45 and momentum < 0:
                 signals.append("🔴 SELL SIGNAL")
 
-        # ✅ SEND IF ANY SIGNALS FOUND
         if signals:
             msg = f"""
 📊 {symbol}
-💰 Price: ₹{price}
+💰 ₹{price}
 
 {chr(10).join(signals)}
 
@@ -130,3 +123,5 @@ class MultiSignalStrategy:
             send_alert(msg)
 
             self.last_alert_time[symbol] = now
+
+        self.save_data()
