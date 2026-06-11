@@ -23,10 +23,9 @@ class MultiSignalStrategy:
 
         self.volume_history = defaultdict(lambda: deque(maxlen=20))
         self.last_alert_time = defaultdict(float)
-
         self.live_candidates = []
 
-        self.COOLDOWN = 120   # 🔽 reduced cooldown
+        self.COOLDOWN = 120
         self.BREAKOUT_LOOKBACK = 20
 
     def save_data(self):
@@ -39,7 +38,6 @@ class MultiSignalStrategy:
     def calculate_rsi(self, prices):
         if len(prices) < 15:
             return 50
-
         gains, losses = 0, 0
         for i in range(-14, 0):
             diff = prices[i] - prices[i - 1]
@@ -47,10 +45,8 @@ class MultiSignalStrategy:
                 gains += diff
             else:
                 losses += abs(diff)
-
         if losses == 0:
             return 100
-
         rs = gains / losses
         return 100 - (100 / (1 + rs))
 
@@ -63,31 +59,29 @@ class MultiSignalStrategy:
         return prices[-1] - prices[-3]
 
     def breakout_levels(self, prices):
-        recent = list(prices)[-self.BREAKOUT_LOOKBACK:]
+        recent = list(prices)[-20:]
         return max(recent), min(recent)
 
     def volume_spike(self, symbol, volume):
         self.volume_history[symbol].append(volume)
         vols = self.volume_history[symbol]
-
         if len(vols) < 5:
             return False
-
         avg = sum(list(vols)[-5:]) / 5
-        return volume > avg * 1.5   # 🔽 relaxed
+        return volume > avg * 1.5
 
     def update(self, symbol, price, volume):
 
         if not symbol or price is None:
             return
 
-        if volume < 50000:   # 🔽 relaxed
+        if volume < 50000:
             return
 
         self.price_history[symbol].append(price)
         prices = self.price_history[symbol]
 
-        if len(prices) < self.BREAKOUT_LOOKBACK:
+        if len(prices) < 20:
             return
 
         now = time.time()
@@ -103,26 +97,22 @@ class MultiSignalStrategy:
         direction = None
         score = 0
 
-        # ✅ RELAXED BUY
         if price >= high * 0.998:
             if (rsi > 55 and price > vwap) or vol_spike:
                 direction = "BUY"
                 score += 20
 
-        # ✅ RELAXED SELL
         elif price <= low * 1.002:
             if (rsi < 45 and price < vwap) or vol_spike:
                 direction = "SELL"
                 score += 20
 
-        # ✅ Momentum boost
         if abs(momentum) > 2:
             score += 10
 
         if direction is None:
             return
 
-        # ✅ Entry / SL / Target
         if direction == "BUY":
             entry = price
             sl = low
@@ -132,15 +122,8 @@ class MultiSignalStrategy:
             sl = high
             target = entry - (sl - entry) * 2
 
-        # ✅ Rating
-        if score >= 30:
-            rating = "🔥 VERY HIGH"
-        elif score >= 20:
-            rating = "✅ HIGH"
-        else:
-            rating = "⚠️ MEDIUM"
+        rating = "🔥 VERY HIGH" if score >= 30 else "✅ HIGH"
 
-        # ✅ LIVE ALERT
         msg = f"""
 🚨 LIVE TRADE SIGNAL 🚨
 
@@ -152,13 +135,10 @@ class MultiSignalStrategy:
 
 ⭐ Score: {score}
 📊 {rating}
-
-⏱ {time.strftime('%H:%M:%S')}
 """
         print(msg)
         send_alert(msg)
 
-        # ✅ store for summary
         self.live_candidates.append({
             "symbol": symbol,
             "price": round(entry, 2),
