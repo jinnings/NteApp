@@ -4,6 +4,7 @@ import time
 from strategy import MultiSignalStrategy
 from config import ACCESS_TOKEN
 from mapping import MAPPING
+from alerts import send_alert  # ✅ added
 
 strategy = MultiSignalStrategy()
 
@@ -11,6 +12,7 @@ print("🚀 Bot running ✅")
 
 last_summary = 0
 last_prices = {}
+scan_counter = 0   # ✅ NEW
 
 
 def get_prices_batch():
@@ -37,7 +39,7 @@ def get_prices_batch():
                 timeout=5
             )
 
-            # ✅ DEBUG (can remove later)
+            # ✅ DEBUG
             print("\n----------------------")
             print("BATCH:", batch)
             print("STATUS CODE:", res.status_code)
@@ -49,7 +51,6 @@ def get_prices_batch():
 
             data = res.json()
 
-            # ✅ API error check
             if data.get("status") == "error":
                 print("❌ API ERROR:", data)
                 continue
@@ -58,11 +59,13 @@ def get_prices_batch():
                 print("⚠️ Empty market data for batch")
                 continue
 
-            # ✅ ✅ FIX APPLIED HERE
+            # ✅ USE SYMBOL FROM RESPONSE
             for instrument_key, value in data["data"].items():
 
-                # ✅ use symbol from response directly
-                symbol = value.get("symbol")   # e.g., NHPC, UPL
+                symbol = value.get("symbol")  # NHPC, ZOMATO
+
+                if not symbol:
+                    continue
 
                 prices[symbol] = {
                     "price": value.get("last_price"),
@@ -94,11 +97,26 @@ while True:
             strategy.update(symbol, price, volume)
 
             # ✅ example tracking
-            if symbol == "ZOMATO":  # <-- changed
+            if symbol == "ZOMATO":
                 print(f"📊 ZOMATO CMP: ₹{price} | Vol: {volume}")
+
+        # ✅ ✅ SCAN COUNTER LOGIC
+        scan_counter += 1
+
+        if scan_counter >= 3:
+            send_alert(f"""
+🔄 Scan Completed ✅
+
+📊 Stocks scanned: {len(prices)}
+⏱ Time: {time.strftime('%H:%M:%S')}
+
+✅ Bot running smoothly 🚀
+""")
+            scan_counter = 0  # reset
 
         now = time.time()
 
+        # ✅ summary every 1 min
         if now - last_summary > 60:
             print(f"📊 Running | {len(prices)} stocks ✅")
             last_summary = now
