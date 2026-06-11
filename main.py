@@ -35,6 +35,7 @@ def get_prices_batch(mapping):
                 params={"instrument_key": ",".join(batch)},
                 timeout=5
             )
+
             data = res.json()
 
             if "data" not in data:
@@ -42,6 +43,7 @@ def get_prices_batch(mapping):
 
             for _, value in data["data"].items():
                 symbol = value.get("symbol")
+
                 if not symbol:
                     continue
 
@@ -60,15 +62,13 @@ while True:
     try:
         scan_cycle += 1
 
-        # ✅ CORE stocks (fast)
+        # ✅ CORE stocks
         prices = get_prices_batch(CORE_MAPPING)
 
-        # ✅ MOMENTUM stocks (every 3rd cycle)
+        # ✅ MOMENTUM stocks every 3rd scan
         if scan_cycle % 3 == 0:
-            momentum_prices = get_prices_batch(MOMENTUM_MAPPING)
-            prices.update(momentum_prices)
+            prices.update(get_prices_batch(MOMENTUM_MAPPING))
 
-        # ✅ fallback
         if not prices:
             prices = last_prices
         else:
@@ -79,13 +79,14 @@ while True:
 
         now = time.time()
 
-        # ✅ 5‑MIN SUMMARY
+        # ✅ 5-min summary
         if now - last_scan_alert > 300:
 
             top = strategy.get_top_stocks()
 
             if top:
                 msg = "🔥 TOP INTRADAY SETUPS 🔥\n\n"
+
                 for i, s in enumerate(top, 1):
                     msg += (
                         f"{i}. {s['symbol']} ({s['direction']})\n"

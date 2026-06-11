@@ -10,6 +10,7 @@ class MultiSignalStrategy:
 
         self.filename = "price_data.pkl"
 
+        # ✅ Safe load
         if os.path.exists(self.filename):
             try:
                 with open(self.filename, "rb") as f:
@@ -27,13 +28,6 @@ class MultiSignalStrategy:
 
         self.COOLDOWN = 120
         self.BREAKOUT_LOOKBACK = 20
-
-    def save_data(self):
-        try:
-            with open(self.filename, "wb") as f:
-                pickle.dump(self.price_history, f)
-        except Exception as e:
-            print("Save error:", e)
 
     def calculate_rsi(self, prices):
         if len(prices) < 15:
@@ -90,6 +84,7 @@ class MultiSignalStrategy:
             return
 
         now = time.time()
+
         if now - self.last_alert_time[symbol] < self.COOLDOWN:
             return
 
@@ -118,8 +113,8 @@ class MultiSignalStrategy:
         if abs(momentum) > 2:
             score += 10
 
-        # ✅ ✅ FILTER (IMPORTANT)
-        if direction is None or score < 20:
+        # ✅ 🔥 FINAL FILTER (ONLY > 20)
+        if direction is None or score <= 20:
             return
 
         # ✅ Entry / SL / Target
@@ -134,7 +129,6 @@ class MultiSignalStrategy:
 
         rating = "🔥 VERY HIGH" if score >= 30 else "✅ HIGH"
 
-        # ✅ SEND ALERT
         msg = f"""
 🚨 LIVE TRADE SIGNAL 🚨
 
@@ -147,6 +141,7 @@ class MultiSignalStrategy:
 ⭐ Score: {score}
 📊 {rating}
 """
+
         print(msg)
         send_alert(msg)
 
@@ -162,9 +157,6 @@ class MultiSignalStrategy:
         })
 
         self.last_alert_time[symbol] = now
-
-        if int(time.time()) % 10 == 0:
-            self.save_data()
 
     def get_top_stocks(self):
         if not self.live_candidates:
