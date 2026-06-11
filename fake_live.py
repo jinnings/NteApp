@@ -1,26 +1,60 @@
 import time
 import random
-from strategy import BreakoutAlert
 
-strategy = BreakoutAlert()
+from alerts import send_alert
 
-symbol = "NSE_EQ|RELIANCE"
+print("🚀 Fake Live Price Sender ✅")
 
-price = 2500  # starting price
+symbols = ["RELIANCE", "TCS", "INFY"]
 
-print("🚀 Starting FAKE LIVE market...\n")
+base_prices = {
+    "RELIANCE": 2850,
+    "TCS": 3900,
+    "INFY": 1500
+}
+
+current_prices = base_prices.copy()
+
+# ✅ simulate price
+def generate_price(symbol):
+    last_price = current_prices[symbol]
+
+    move = random.uniform(-5, 5)   # movement
+    new_price = last_price + move
+
+    if new_price <= 0:
+        new_price = last_price
+
+    current_prices[symbol] = round(new_price, 2)
+    return current_prices[symbol]
+
+
+# ✅ timer to avoid spamming
+last_send_time = 0
 
 while True:
-    # Simulate price movement
-    price += random.uniform(-1, 2)  # slight upward bias
+    try:
+        msg = ""
 
-    # Simulate volume spike occasionally
-    volume = random.randint(1000, 5000)
+        for symbol in symbols:
+            price = generate_price(symbol)
 
-    # Send data to strategy (just like real market)
-    strategy.update(symbol, round(price, 2), volume)
+            print(f"{symbol} → ₹{price}")
 
-    # Print live feed
-    print(f"{symbol} | Price: {round(price, 2)} | Volume: {volume}")
+            # ✅ build telegram message
+            msg += f"{symbol} → ₹{price}\n"
 
-    time.sleep(1)  # 1 second = live tick
+        now = time.time()
+
+        # ✅ send every 20 seconds
+        if now - last_send_time > 20:
+            send_alert(msg)
+            print("✅ Sent to Telegram\n")
+            last_send_time = now
+
+        print("--------------------------")
+
+    except Exception as e:
+        print("❌ ERROR:", e)
+
+    time.sleep(5)

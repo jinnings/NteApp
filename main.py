@@ -10,9 +10,46 @@ strategy = MultiSignalStrategy()
 
 print("🚀 Bot running ✅")
 
-last_scan_alert = 0
 last_prices = {}
 scan_cycle = 0
+
+# ✅ send only once
+nifty_sent = False
+
+
+# ✅ ✅ NIFTY SENTIMENT FUNCTION
+def nifty_sentiment_message(open_price, current_price, prev_close=None):
+
+    if not open_price or not current_price:
+        return None
+
+    change = ((current_price - open_price) / open_price) * 100
+
+    if change > 0.5:
+        trend = "📈 UP"
+    elif change < -0.5:
+        trend = "📉 DOWN"
+    else:
+        trend = "➡️ FLAT"
+
+    gap_msg = ""
+    if prev_close:
+        gap = ((open_price - prev_close) / prev_close) * 100
+
+        if gap > 0.5:
+            gap_msg = f"📊 GAP UP (+{round(gap,2)}%)"
+        elif gap < -0.5:
+            gap_msg = f"📊 GAP DOWN ({round(gap,2)}%)"
+        else:
+            gap_msg = f"📊 FLAT OPEN ({round(gap,2)}%)"
+
+    return f"""
+📊 NIFTY MARKET OPEN
+
+{trend} ({round(change,2)}%)
+
+{gap_msg}
+"""
 
 
 def get_prices_batch(mapping):
@@ -35,6 +72,7 @@ def get_prices_batch(mapping):
                 params={"instrument_key": ",".join(batch)},
                 timeout=5
             )
+
             data = res.json()
 
             if "data" not in data:
@@ -48,7 +86,9 @@ def get_prices_batch(mapping):
 
                 prices[symbol] = {
                     "price": value.get("last_price"),
-                    "volume": value.get("volume", 0)
+                    "volume": value.get("volume", 0),
+                    "open": value.get("ohlc", {}).get("open"),
+                    "prev_close": value.get("ohlc", {}).get("close")
                 }
 
         except Exception as e:
@@ -64,7 +104,7 @@ while True:
         # ✅ CORE stocks
         prices = get_prices_batch(CORE_MAPPING)
 
-        # ✅ MOMENTUM every 3rd cycle
+        # ✅ MOMENTUM stocks every 3 cycles
         if scan_cycle % 3 == 0:
             prices.update(get_prices_batch(MOMENTUM_MAPPING))
 
@@ -74,57 +114,27 @@ while True:
         else:
             last_prices = prices
 
-        # ✅ strategy update
+        # ✅ ✅ NIFTY SENTIMENT (ONLY ONCE)
+        if not nifty_sent:
+
+            nifty = prices.get("NIFTY")
+
+            if nifty:
+                msg = nifty_sentiment_message(
+                    nifty.get("open"),
+                    nifty.get("price"),
+                    nifty.get("prev_close")
+                )
+
+                if msg:
+                    send_alert(msg)
+                    print("✅ NIFTY sentiment sent")
+
+                    nifty_sent = True
+
+        # ✅ ✅ MAIN STRATEGY (ALL ALERTS INSIDE THIS)
         for symbol, data in prices.items():
             strategy.update(symbol, data["price"], data["volume"])
-
-        # ✅ TIME (IMPORTANT)
-        now = time.time()
-
-        # ✅ ✅ RUNNERS ALERT (FIXED PLACEMENT)
-        if now - strategy.runner_alert_time > 120:
-
-            runners = strategy.get_runners()
-
-            if runners:
-                msg = "📈 TODAY'S RUNNERS (PULLBACK ENTRY ✅)\n\n"
-
-                for i, stock in enumerate(runners, 1):
-                    arrow = "🟢 BUY" if stock["direction"] == "BUY" else "🔴 SELL"
-
-                    msg += (
-                        f"{i}. {stock['symbol']}\n"
-                        f"{arrow} | Pullback ₹{stock['price']}\n"
-                        f"Change: {stock['change']}%\n\n"
-                    )
-
-                send_alert(msg)
-            else:
-                print("No pullback runners")
-
-            strategy.runner_alert_time = now
-
-        # ✅ 5-min summary
-        if now - last_scan_alert > 300:
-
-            top = strategy.get_top_stocks()
-
-            if top:
-                msg = "🔥 TOP INTRADAY SETUPS 🔥\n\n"
-
-                for i, s in enumerate(top, 1):
-                    msg += (
-                        f"{i}. {s['symbol']} ({s['direction']})\n"
-                        f"Entry: ₹{s['price']}\n"
-                        f"SL: ₹{s['sl']}\n"
-                        f"Target: ₹{s['target']}\n"
-                        f"{s['rating']} ⭐{s['score']}\n\n"
-                    )
-            else:
-                msg = "⚠️ No strong setups found"
-
-            send_alert(msg)
-            last_scan_alert = now
 
         print(f"📊 Cycle {scan_cycle} | Stocks: {len(prices)}")
 
