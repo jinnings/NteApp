@@ -7,56 +7,82 @@ from mapping import MAPPING
 
 strategy = MultiSignalStrategy()
 
-STOCKS = list(MAPPING.keys())
-
-last_summary = 0
-
 print("🚀 Bot running ✅")
 
+last_summary = 0
+last_prices = {}
 
-def get_prices():
-    url = "https://api.upstox.com/v2/market-quote/ltp"
+# ✅ reverse mapping
+REVERSE_MAPPING = {v: k for k, v in MAPPING.items()}
+
+
+def get_prices_batch():
+    url = "https://api.upstox.com/v2/market-quote/quotes"
 
     headers = {
         "Authorization": f"Bearer {ACCESS_TOKEN}"
     }
 
     prices = {}
+    instrument_list = list(MAPPING.values())
 
-    for symbol in STOCKS:
-        instrument_key = MAPPING.get(symbol)
+    BATCH_SIZE = 20
+
+    for i in range(0, len(instrument_list), BATCH_SIZE):
+        batch = instrument_list[i:i + BATCH_SIZE]
 
         try:
             res = requests.get(
                 url,
                 headers=headers,
-                params={"instrument_key": instrument_key}
+                params={"instrument_key": ",".join(batch)},
+                timeout=5
             )
 
             data = res.json()
 
-            if "data" in data and symbol in data["data"]:
-                prices[symbol] = data["data"][symbol]["last_price"]
+            if "status" in data and data["status"] == "error":
+                print("❌ API ERROR:", data)
+                continue
 
-        except:
-            continue
+            if not data or "data" not in data:
+                continue
+
+            for instrument_key, value in data["data"].items():
+                symbol = REVERSE_MAPPING.get(instrument_key)
+                if not symbol:
+                    continue
+
+                prices[symbol] = {
+                    "price": value["last_price"],
+                    "volume": value.get("volume", 0)
+                }
+
+        except Exception as e:
+            print("❌ Batch error:", e)
 
     return prices
 
 
 while True:
     try:
-        prices = get_prices()
+        prices = get_prices_batch()
 
+        # ✅ fallback
         if not prices:
-            print("⚠️ API returned no data — continuing...")
+            print("⚠️ API returned no data — using last values")
+            prices = last_prices
+        else:
+            last_prices = prices
 
-        for symbol, price in prices.items():
-            strategy.update(symbol, price, 1)
+        for symbol, data in prices.items():
+            price = data["price"]
+            volume = data["volume"]
 
-            # ✅ monitor one stock
+            strategy.update(symbol, price, volume)
+
             if symbol == "NSE_EQ:ZOMATO":
-                print(f"📊 ZOMATO CMP: ₹{price}")
+                print(f"📊 ZOMATO CMP: ₹{price} | Vol: {volume}")
 
         now = time.time()
 
@@ -67,4 +93,4 @@ while True:
     except Exception as e:
         print("❌ ERROR:", e)
 
-    time.sleep(6)
+    time.sleep(5)
