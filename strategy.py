@@ -10,7 +10,6 @@ class MultiSignalStrategy:
 
         self.filename = "price_data.pkl"
 
-        # ✅ safe load
         if os.path.exists(self.filename):
             try:
                 with open(self.filename, "rb") as f:
@@ -25,21 +24,16 @@ class MultiSignalStrategy:
         self.volume_history = defaultdict(lambda: deque(maxlen=20))
         self.last_alert_time = defaultdict(float)
 
-        # ✅ tuned settings
-        self.COOLDOWN = 180  # 3 minutes
+        self.COOLDOWN = 180
         self.BREAKOUT_LOOKBACK = 20
 
-    # ✅ safe save
     def save_data(self):
-        temp_file = self.filename + ".tmp"
         try:
-            with open(temp_file, "wb") as f:
+            with open(self.filename, "wb") as f:
                 pickle.dump(self.price_history, f)
-            os.replace(temp_file, self.filename)
         except Exception as e:
             print("Save error:", e)
 
-    # ✅ price % change
     def price_change_percent(self, prices):
         if len(prices) < 5:
             return 0
@@ -75,7 +69,6 @@ class MultiSignalStrategy:
         recent = list(prices)[-self.BREAKOUT_LOOKBACK:]
         return max(recent), min(recent)
 
-    # ✅ stronger volume spike
     def volume_spike(self, symbol, volume):
         self.volume_history[symbol].append(volume)
         vols = self.volume_history[symbol]
@@ -84,24 +77,34 @@ class MultiSignalStrategy:
             return False
 
         avg_vol = sum(list(vols)[-5:]) / 5
-        return volume > avg_vol * 2.5   # ✅ stricter
+        return volume > avg_vol * 2.5
+
+    # ✅ Trend detection
+    def is_uptrend(self, prices):
+        if len(prices) < 6:
+            return False
+        return prices[-1] > prices[-2] > prices[-3] and prices[-3] > prices[-5]
+
+    def is_downtrend(self, prices):
+        if len(prices) < 6:
+            return False
+        return prices[-1] < prices[-2] < prices[-3] and prices[-3] < prices[-5]
 
     def update(self, symbol, price, volume):
 
-        # ✅ ELITE FILTER (removes junk stocks)
+        # ✅ ELITE FILTER
         if volume < 200000:
             return
 
         self.price_history[symbol].append(price)
         prices = self.price_history[symbol]
 
-        # ✅ ignore tiny moves
+        # ✅ ignore tiny move
         if len(prices) > 1 and abs(price - prices[-2]) < 0.3:
             return
 
         now = time.time()
 
-        # ✅ cooldown
         if now - self.last_alert_time[symbol] < self.COOLDOWN:
             return
 
@@ -117,55 +120,84 @@ class MultiSignalStrategy:
 
         signals = []
 
-        # ✅ FINAL QUALITY FILTER
+        # ✅ strong move filter
         if change_pct < 0.8:
             return
 
-        # ✅ STRONG MOMENTUM ONLY
-        if abs(momentum) > 2 and change_pct > 0.8:
+        # ✅ MOMENTUM
+        if abs(momentum) > 2 and price >= high * 0.998:
+            if momentum > 0 and rsi > 60 and price > vwap:
+                signals.append("⚡ MOMENTUM UP (STRONG)")
+            elif momentum < 0 and rsi < 40 and price < vwap:
+                signals.append("⚡ MOMENTUM DOWN (STRONG)")
 
-            # ✅ strict breakout proximity
-            if price >= high * 0.998:
-
-                if momentum > 0 and rsi > 60 and price > vwap:
-                    signals.append("⚡ MOMENTUM UP (STRONG)")
-
-                elif momentum < 0 and rsi < 40 and price < vwap:
-                    signals.append("⚡ MOMENTUM DOWN (STRONG)")
-
-        # ✅ breakout signal
+        # ✅ BREAKOUT
         if price > high:
             signals.append("🔥 BREAKOUT UP")
         elif price < low:
             signals.append("🔥 BREAKOUT DOWN")
 
-        # ✅ BUY / SELL confirmation
-        if price > high and vol_spike:
-            if price > vwap and rsi > 60 and momentum > 0:
-                signals.append("🟢 BUY SIGNAL")
+        # ✅ BUY / SELL
+        if price > high and vol_spike and price > vwap and rsi > 60:
+            signals.append("🟢 BUY SIGNAL")
 
-        if price < low and vol_spike:
-            if price < vwap and rsi < 40 and momentum < 0:
-                signals.append("🔴 SELL SIGNAL")
+        if price < low and vol_spike and price < vwap and rsi < 40:
+            signals.append("🔴 SELL SIGNAL")
 
-        # ✅ send alerts
-        if signals:
+        # ✅ TREND CONTINUATION
+        uptrend = self.is_uptrend(prices)
+        downtrend = self.is_downtrend(prices)
+
+        recent_high = max(list(prices)[-6:])
+        recent_low = min(list(prices)[-6:])
+        pullback = price < recent_high and price > recent_low
+
+        if uptrend and pullback:
+            if price > vwap and rsi > 55 and momentum > 0:
+                signals.append("📈 TREND CONTINUATION BUY")
+
+        if downtrend and pullback:
+            if price < vwap and rsi < 45 and momentum < 0:
+                signals.append("📉 TREND CONTINUATION SELL")
+
+        # ✅ ✅ SCORING SYSTEM
+        score = 0
+
+        if "⚡ MOMENTUM UP (STRONG)" in signals:
+            score += 10
+        if "🔥 BREAKOUT UP" in signals:
+            score += 10
+        if "🟢 BUY SIGNAL" in signals:
+            score += 15
+        if "📈 TREND CONTINUATION BUY" in signals:
+            score += 5
+
+        # ✅ ✅ RATING
+        if score >= 30:
+            rating = "🔥 VERY HIGH"
+        elif score >= 20:
+            rating = "✅ HIGH"
+        elif score >= 10:
+            rating = "⚠️ MEDIUM"
+        else:
+            rating = "❌ LOW"
+
+        # ✅ ✅ FINAL OUTPUT
+        if signals and score >= 10:
             msg = f"""
 📊 {symbol}
 💰 ₹{price}
 
 {chr(10).join(signals)}
 
-📈 RSI: {round(rsi,1)}
-📊 VWAP: {round(vwap,2)}
-📦 Volume: {volume}
-📊 Change: {round(change_pct,2)}%
+⭐ Score: {score}/40
+📊 Rating: {rating}
 """
             print(msg)
             send_alert(msg)
 
             self.last_alert_time[symbol] = now
 
-        # ✅ periodic save
+        # ✅ save periodically
         if int(time.time()) % 10 == 0:
             self.save_data()
