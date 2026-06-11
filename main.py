@@ -11,7 +11,7 @@ strategy = MultiSignalStrategy()
 print("🚀 Bot running ✅")
 
 last_summary = 0
-last_scan_alert = 0   # ✅ time-based tracking
+last_scan_alert = 0
 last_prices = {}
 
 
@@ -19,17 +19,15 @@ def get_prices_batch():
     url = "https://api.upstox.com/v2/market-quote/quotes"
 
     headers = {
-        "Authorization": f"Bearer {ACCESS_TOKEN}",
-        "Accept": "application/json"
+        "Authorization": f"Bearer {ACCESS_TOKEN}"
     }
 
     prices = {}
-    instrument_list = list(MAPPING.values())
-
+    keys = list(MAPPING.values())
     BATCH_SIZE = 20
 
-    for i in range(0, len(instrument_list), BATCH_SIZE):
-        batch = instrument_list[i:i + BATCH_SIZE]
+    for i in range(0, len(keys), BATCH_SIZE):
+        batch = keys[i:i + BATCH_SIZE]
 
         try:
             res = requests.get(
@@ -39,27 +37,12 @@ def get_prices_batch():
                 timeout=5
             )
 
-            # ✅ DEBUG
-            print("\n----------------------")
-            print("BATCH:", batch)
-            print("STATUS CODE:", res.status_code)
-            print("----------------------\n")
-
-            if res.status_code != 200:
-                print("❌ HTTP ERROR:", res.status_code, res.text)
-                continue
-
             data = res.json()
 
-            if data.get("status") == "error":
-                print("❌ API ERROR:", data)
+            if "data" not in data:
                 continue
 
-            if "data" not in data or not data["data"]:
-                print("⚠️ Empty market data for batch")
-                continue
-
-            for instrument_key, value in data["data"].items():
+            for _, value in data["data"].items():
                 symbol = value.get("symbol")
 
                 if not symbol:
@@ -71,7 +54,7 @@ def get_prices_batch():
                 }
 
         except Exception as e:
-            print("❌ Batch error:", e)
+            print("Batch error:", e)
 
     return prices
 
@@ -80,43 +63,42 @@ while True:
     try:
         prices = get_prices_batch()
 
-        # ✅ fallback logic
         if not prices:
-            print("⚠️ API returned no data — using last values")
             prices = last_prices
         else:
             last_prices = prices
 
-        # ✅ strategy update
         for symbol, data in prices.items():
-            price = data["price"]
-            volume = data["volume"]
-
-            strategy.update(symbol, price, volume)
-
-            if symbol == "ZOMATO":
-                print(f"📊 ZOMATO CMP: ₹{price} | Vol: {volume}")
+            strategy.update(symbol, data["price"], data["volume"])
 
         now = time.time()
 
-        # ✅ terminal summary
+        # ✅ 5‑MIN SUMMARY
+        if now - last_scan_alert > 300:
+
+            top = strategy.get_top_stocks()
+
+            if top:
+                msg = "🔥 TOP INTRADAY SETUPS 🔥\n\n"
+                for i, s in enumerate(top, 1):
+                    msg += (
+                        f"{i}. {s['symbol']} ({s['direction']})\n"
+                        f"Entry: ₹{s['price']}\n"
+                        f"SL: ₹{s['sl']}\n"
+                        f"Target: ₹{s['target']}\n"
+                        f"{s['rating']} ⭐{s['score']}\n\n"
+                    )
+            else:
+                msg = "⚠️ No strong setups found"
+
+            send_alert(msg)
+            last_scan_alert = now
+
         if now - last_summary > 60:
             print(f"📊 Running | {len(prices)} stocks ✅")
             last_summary = now
 
-        # ✅ ✅ TELEGRAM NOTIFICATION EVERY 5 MINUTES
-        if now - last_scan_alert > 300:
-            send_alert(f"""
-🔄 Scan Update ✅
-
-📊 Stocks scanned: {len(prices)}
-⏱ Time: {time.strftime('%H:%M:%S')}
-
-✅ Bot running smoothly 🚀
-""")
-            last_scan_alert = now
-
     except Exception as e:
-        print("❌ MAIN LOOP ERROR:", e)
+        print("MAIN ERROR:", e)
 
     time.sleep(5)
