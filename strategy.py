@@ -3,6 +3,7 @@ import time
 from alerts import send_alert
 import pickle
 import os
+import numpy as np
 
 
 class MultiSignalStrategy:
@@ -10,7 +11,7 @@ class MultiSignalStrategy:
 
         self.filename = "price_data.pkl"
 
-        # ✅ Safe load
+        # ✅ safe load
         if os.path.exists(self.filename):
             try:
                 with open(self.filename, "rb") as f:
@@ -69,6 +70,28 @@ class MultiSignalStrategy:
         avg = sum(list(vols)[-5:]) / 5
         return volume > avg * 1.5
 
+    # ✅ MACD
+    def calculate_macd(self, prices):
+        if len(prices) < 26:
+            return 0, 0
+
+        ema12 = np.mean(prices[-12:])
+        ema26 = np.mean(prices[-26:])
+        macd = ema12 - ema26
+        signal = np.mean(prices[-9:])
+        return macd, signal
+
+    # ✅ Bollinger Bands
+    def calculate_bollinger(self, prices):
+        if len(prices) < 20:
+            return 0, 0, 0
+
+        ma = np.mean(prices[-20:])
+        std = np.std(prices[-20:])
+        upper = ma + 2 * std
+        lower = ma - 2 * std
+        return upper, ma, lower
+
     def update(self, symbol, price, volume):
 
         if not symbol or price is None:
@@ -80,11 +103,10 @@ class MultiSignalStrategy:
         self.price_history[symbol].append(price)
         prices = self.price_history[symbol]
 
-        if len(prices) < 20:
+        if len(prices) < 30:
             return
 
         now = time.time()
-
         if now - self.last_alert_time[symbol] < self.COOLDOWN:
             return
 
@@ -93,31 +115,55 @@ class MultiSignalStrategy:
         momentum = self.momentum(prices)
         high, low = self.breakout_levels(prices)
         vol_spike = self.volume_spike(symbol, volume)
+        macd, macd_signal = self.calculate_macd(prices)
+        upper, mid, lower = self.calculate_bollinger(prices)
 
         direction = None
         score = 0
 
         # ✅ BUY
         if price >= high * 0.998:
-            if (rsi > 55 and price > vwap) or vol_spike:
+
+            if rsi > 60:
+                score += 8
+            if price > vwap:
+                score += 5
+            if vol_spike:
+                score += 10
+            if momentum > 2:
+                score += 8
+            if macd > macd_signal:
+                score += 7
+            if price > upper:
+                score += 7
+
+            if score >= 25:
                 direction = "BUY"
-                score += 20
 
         # ✅ SELL
         elif price <= low * 1.002:
-            if (rsi < 45 and price < vwap) or vol_spike:
+
+            if rsi < 40:
+                score += 8
+            if price < vwap:
+                score += 5
+            if vol_spike:
+                score += 10
+            if momentum < -2:
+                score += 8
+            if macd < macd_signal:
+                score += 7
+            if price < lower:
+                score += 7
+
+            if score >= 25:
                 direction = "SELL"
-                score += 20
 
-        # ✅ Momentum boost
-        if abs(momentum) > 2:
-            score += 10
-
-        # ✅ 🔥 FINAL FILTER (ONLY > 20)
-        if direction is None or score <= 20:
+        # ✅ ✅ FINAL FILTER → ONLY ≥30
+        if direction is None or score < 30:
             return
 
-        # ✅ Entry / SL / Target
+        # ✅ Trade levels
         if direction == "BUY":
             entry = price
             sl = low
@@ -127,10 +173,14 @@ class MultiSignalStrategy:
             sl = high
             target = entry - (sl - entry) * 2
 
-        rating = "🔥 VERY HIGH" if score >= 30 else "✅ HIGH"
+        # ✅ Rating
+        if score >= 40:
+            rating = "🔥 VERY HIGH"
+        else:
+            rating = "✅ HIGH"
 
         msg = f"""
-🚨 LIVE TRADE SIGNAL 🚨
+🚨 ELITE TRADE SIGNAL 🚨
 
 📊 {symbol} ({direction})
 
@@ -145,7 +195,6 @@ class MultiSignalStrategy:
         print(msg)
         send_alert(msg)
 
-        # ✅ store for summary
         self.live_candidates.append({
             "symbol": symbol,
             "price": round(entry, 2),
