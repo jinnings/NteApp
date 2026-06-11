@@ -24,10 +24,9 @@ def get_prices_batch():
 
     prices = {}
     keys = list(MAPPING.values())
-    BATCH_SIZE = 20
 
-    for i in range(0, len(keys), BATCH_SIZE):
-        batch = keys[i:i + BATCH_SIZE]
+    for i in range(0, len(keys), 20):
+        batch = keys[i:i + 20]
 
         try:
             res = requests.get(
@@ -36,7 +35,6 @@ def get_prices_batch():
                 params={"instrument_key": ",".join(batch)},
                 timeout=5
             )
-
             data = res.json()
 
             if "data" not in data:
@@ -44,7 +42,6 @@ def get_prices_batch():
 
             for _, value in data["data"].items():
                 symbol = value.get("symbol")
-
                 if not symbol:
                     continue
 
@@ -73,7 +70,7 @@ while True:
 
         now = time.time()
 
-        # ✅ 5‑MIN SUMMARY
+        # ✅ 5-minute summary
         if now - last_scan_alert > 300:
 
             top = strategy.get_top_stocks()
