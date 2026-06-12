@@ -15,7 +15,6 @@ class MultiSignalStrategy:
         self.day_open = {}
         self.COOLDOWN = 120
 
-    # ✅ CONTROL
     def can_send(self, symbol, priority):
         now = time.time()
 
@@ -23,32 +22,27 @@ class MultiSignalStrategy:
             if now - self.last_sent_time[symbol] < self.COOLDOWN:
                 if self.sent_priority.get(symbol, 0) >= priority:
                     return False
-            else:
-                self.sent_priority[symbol] = 0
 
         self.last_sent_time[symbol] = now
         self.sent_priority[symbol] = priority
         return True
 
-    # ✅ DAY CHANGE
     def get_day_change(self, symbol, price):
         if symbol not in self.day_open:
             self.day_open[symbol] = price
 
         return ((price - self.day_open[symbol]) / self.day_open[symbol]) * 100
 
-    # ✅ VOLUME SPIKE
     def volume_spike(self, symbol, volume):
         self.volume_history[symbol].append(volume)
-        vols = list(self.volume_history[symbol])
 
+        vols = list(self.volume_history[symbol])
         if len(vols) < 5:
             return False
 
         avg = sum(vols[-5:]) / 5
         return volume > avg * 1.5
 
-    # ✅ SCORE
     def calculate_score(self, price, vwap, day_change, momentum, vol_spike):
 
         score = 0
@@ -68,10 +62,9 @@ class MultiSignalStrategy:
 
         return int(score)
 
-    # ✅ MAIN LOGIC
     def update(self, symbol, price, volume):
 
-        if not symbol or price is None or volume < 20000:
+        if not symbol or price is None or volume < 10000:
             return
 
         self.price_history[symbol].append(price)
@@ -83,15 +76,19 @@ class MultiSignalStrategy:
         vwap = sum(prices) / len(prices)
         momentum = prices[-1] - prices[-3]
         day_change = self.get_day_change(symbol, price)
-        vol_spike = self.volume_spike(symbol, volume)
 
+        # ✅ skip dead stocks
+        if abs(day_change) < 0.5:
+            return
+
+        vol_spike = self.volume_spike(symbol, volume)
         score = self.calculate_score(price, vwap, day_change, momentum, vol_spike)
 
-        # ✅ KEY FIX: 30 threshold
-        if score >= 30:
+        # ✅ BEST SETTINGS
+        if score >= 26:
 
             direction = "🟢 BUY" if momentum > 0 else "🔴 SELL"
-            confidence = "🔥 STRONG" if score >= 40 else "✅ GOOD"
+            confidence = "🔥 STRONG" if score >= 38 else "✅ GOOD"
 
             if self.can_send(symbol, 4):
 
