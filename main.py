@@ -9,6 +9,7 @@ from alerts import send_alert
 strategy = MultiSignalStrategy()
 
 print("🚀 Bot running ✅")
+send_alert("🤖 BOT STARTED ✅\n\n🚀 Trading system is now active")
 
 last_prices = {}
 scan_cycle = 0
