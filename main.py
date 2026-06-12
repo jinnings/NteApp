@@ -11,22 +11,19 @@ strategy = MultiSignalStrategy()
 
 print("🚀 Bot running ✅")
 
-# ✅ BOT START MESSAGE
+# ✅ START MESSAGE
 send_alert(f"""
 🤖 NteApp STARTED ✅
 
 🕒 {time.strftime('%H:%M:%S')}
-🚀 Trading system is now active
+🚀 Trading system active
 """)
 
 last_prices = {}
 scan_cycle = 0
 nifty_sent = False
 
-# ✅ heartbeat
 last_heartbeat = time.time()
-
-# ✅ error tracking (NO global needed)
 last_error = ""
 last_error_time = 0
 
@@ -39,21 +36,12 @@ def nifty_sentiment_message(open_price, current_price, prev_close=None):
 
     change = ((current_price - open_price) / open_price) * 100
 
-    if change > 0.5:
-        trend = "📈 UP"
-    elif change < -0.5:
-        trend = "📉 DOWN"
-    else:
-        trend = "➡️ FLAT"
+    trend = "📈 UP" if change > 0.5 else "📉 DOWN" if change < -0.5 else "➡️ FLAT"
 
     gap_msg = ""
     if prev_close:
         gap = ((open_price - prev_close) / prev_close) * 100
-
-        if gap > 0.5:
-            gap_msg = f"📊 GAP UP (+{round(gap,2)}%)"
-        elif gap < -0.5:
-            gap_msg = f"📊 GAP DOWN ({round(gap,2)}%)"
+        gap_msg = f"📊 GAP {('UP' if gap > 0 else 'DOWN')} ({round(gap,2)}%)"
 
     return f"""
 📊 NIFTY MARKET OPEN
@@ -64,10 +52,8 @@ def nifty_sentiment_message(open_price, current_price, prev_close=None):
 """
 
 
-# ✅ FETCH DATA
 def get_prices_batch(mapping):
     url = "https://api.upstox.com/v2/market-quote/quotes"
-
     headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
 
     prices = {}
@@ -123,26 +109,24 @@ while True:
         else:
             last_prices = prices
 
-        # ✅ NIFTY OPEN MESSAGE
+        # ✅ NIFTY MESSAGE
         if not nifty_sent:
             nifty = prices.get("NIFTY")
-
             if nifty:
                 msg = nifty_sentiment_message(
                     nifty.get("open"),
                     nifty.get("price"),
                     nifty.get("prev_close")
                 )
-
                 if msg:
                     send_alert(msg)
                     nifty_sent = True
 
-        # ✅ STRATEGY RUN
+        # ✅ STRATEGY
         for symbol, data in prices.items():
             strategy.update(symbol, data["price"], data["volume"])
 
-        # ✅ HEARTBEAT (1 HOUR)
+        # ✅ HEARTBEAT
         if time.time() - last_heartbeat > 3600:
             send_alert(f"""
 🤖 BOT STATUS ✅
@@ -160,7 +144,6 @@ while True:
         error_text = traceback.format_exc()
         now = time.time()
 
-        # ✅ prevent spam
         if error_text != last_error or now - last_error_time > 60:
 
             msg = f"""
@@ -176,7 +159,7 @@ while True:
             try:
                 send_alert(msg)
             except:
-                print("⚠️ Telegram failed")
+                print("Telegram failed")
 
             last_error = error_text
             last_error_time = now
