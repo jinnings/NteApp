@@ -10,13 +10,10 @@ from alerts import send_alert
 strategy = MultiSignalStrategy()
 
 print("🚀 Bot running ✅")
-
 send_alert("🤖 BOT STARTED ✅")
 
 last_prices = {}
 scan_cycle = 0
-last_error = ""
-last_error_time = 0
 
 
 def get_prices_batch(mapping):
@@ -64,33 +61,12 @@ while True:
 
         prices = get_prices_batch(MAPPING)
 
-        if not prices:
-            prices = last_prices
-        else:
-            last_prices = prices
-
         for symbol, data in prices.items():
             strategy.update(symbol, data["price"], data["volume"])
 
-        print(f"📊 Cycle {scan_cycle} | Stocks: {len(prices)} ✅ FULL")
+        print(f"📊 Cycle {scan_cycle} | Stocks: {len(prices)} ✅")
 
     except Exception:
-
-        error_text = traceback.format_exc()
-        now = time.time()
-
-        if error_text != last_error or now - last_error_time > 60:
-
-            print(error_text)
-
-            try:
-                send_alert(f"❌ BOT ERROR\n{error_text}")
-            except:
-                pass
-
-            last_error = error_text
-            last_error_time = now
-
-        time.sleep(5)
+        print(traceback.format_exc())
 
     time.sleep(5)
