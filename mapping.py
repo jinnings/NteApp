@@ -15,12 +15,48 @@ MAPPING = {
     "NSE_EQ:KOTAKBANK": "NSE_EQ|INE237A01028",
     "NSE_EQ:HINDUNILVR": "NSE_EQ|INE030A01027",
     "NSE_EQ:BAJFINANCE": "NSE_EQ|INE918I01026",
+    "NSE_EQ:ASIANPAINT": "NSE_EQ|INE021A01026",
     "NSE_EQ:MARUTI": "NSE_EQ|INE585B01010",
     "NSE_EQ:TITAN": "NSE_EQ|INE280A01028",
+    "NSE_EQ:WIPRO": "NSE_EQ|INE075A01022",
     "NSE_EQ:ULTRACEMCO": "NSE_EQ|INE481G01011",
+    "NSE_EQ:ADANIENT": "NSE_EQ|INE423A01024",
+    "NSE_EQ:NTPC": "NSE_EQ|INE733E01010",
+    "NSE_EQ:POWERGRID": "NSE_EQ|INE752E01010",
 
     # =======================
-    # ✅ MIDCAP (BEST ZONE)
+    # ✅ METAL / ENERGY
+    # =======================
+    "NSE_EQ:ONGC": "NSE_EQ|INE213A01029",
+    "NSE_EQ:TATASTEEL": "NSE_EQ|INE081A01020",
+    "NSE_EQ:JSWSTEEL": "NSE_EQ|INE019A01038",
+    "NSE_EQ:COALINDIA": "NSE_EQ|INE522F01014",
+    "NSE_EQ:BPCL": "NSE_EQ|INE029A01011",
+    "NSE_EQ:IOC": "NSE_EQ|INE242A01010",
+
+    # =======================
+    # ✅ AUTO
+    # =======================
+    "NSE_EQ:TATAMOTORS": "NSE_EQ|INE155A01022",
+    "NSE_EQ:HEROMOTOCO": "NSE_EQ|INE158A01026",
+    "NSE_EQ:BAJAJ-AUTO": "NSE_EQ|INE917I01010",
+    "NSE_EQ:EICHERMOT": "NSE_EQ|INE066A01021",
+
+    # =======================
+    # ✅ PHARMA
+    # =======================
+    "NSE_EQ:DRREDDY": "NSE_EQ|INE089A01023",
+    "NSE_EQ:CIPLA": "NSE_EQ|INE059A01026",
+    "NSE_EQ:DIVISLAB": "NSE_EQ|INE361B01024",
+
+    # =======================
+    # ✅ FMCG
+    # =======================
+    "NSE_EQ:BRITANNIA": "NSE_EQ|INE216A01030",
+    "NSE_EQ:NESTLEIND": "NSE_EQ|INE239A01024",
+
+    # =======================
+    # ✅ MIDCAP CORE
     # =======================
     "NSE_EQ:TATAPOWER": "NSE_EQ|INE245A01021",
     "NSE_EQ:JSWENERGY": "NSE_EQ|INE121E01018",
@@ -31,16 +67,20 @@ MAPPING = {
     "NSE_EQ:MPHASIS": "NSE_EQ|INE356A01018",
     "NSE_EQ:PERSISTENT": "NSE_EQ|INE262H01021",
     "NSE_EQ:COFORGE": "NSE_EQ|INE591G01017",
+    "NSE_EQ:HAL": "NSE_EQ|INE066F01012",
     "NSE_EQ:BEL": "NSE_EQ|INE263A01024",
     "NSE_EQ:BDL": "NSE_EQ|INE171Z01018",
-    "NSE_EQ:HAL": "NSE_EQ|INE066F01012",
+
+    # =======================
+    # ✅ RAILWAYS / INFRA
+    # =======================
     "NSE_EQ:RVNL": "NSE_EQ|INE415G01027",
     "NSE_EQ:IRCON": "NSE_EQ|INE962Y01021",
     "NSE_EQ:IRFC": "NSE_EQ|INE053F01010",
     "NSE_EQ:RAILTEL": "NSE_EQ|INE0DD101019",
 
     # =======================
-    # ✅ BANK / FINANCIAL MIDCAP
+    # ✅ BANK MIDCAP
     # =======================
     "NSE_EQ:FEDERALBNK": "NSE_EQ|INE171A01029",
     "NSE_EQ:BANDHANBNK": "NSE_EQ|INE545U01014",
@@ -50,15 +90,7 @@ MAPPING = {
     "NSE_EQ:MOTILALOFS": "NSE_EQ|INE338I01027",
 
     # =======================
-    # ✅ POWER / PSU
-    # =======================
-    "NSE_EQ:NHPC": "NSE_EQ|INE848E01016",
-    "NSE_EQ:SJVN": "NSE_EQ|INE002L01015",
-    "NSE_EQ:ADANIPOWER": "NSE_EQ|INE814H01011",
-    "NSE_EQ:ADANIGREEN": "NSE_EQ|INE364U01010",
-
-    # =======================
-    # ✅ CHEMICAL / INDUSTRY
+    # ✅ CHEMICALS
     # =======================
     "NSE_EQ:AARTIIND": "NSE_EQ|INE769A01020",
     "NSE_EQ:NAVINFLUOR": "NSE_EQ|INE048G01026",
@@ -66,7 +98,7 @@ MAPPING = {
     "NSE_EQ:FLUOROCHEM": "NSE_EQ|INE09N301011",
 
     # =======================
-    # ✅ CONSUMPTION / RETAIL
+    # ✅ RETAIL / CONSUMPTION
     # =======================
     "NSE_EQ:VMART": "NSE_EQ|INE665J01013",
     "NSE_EQ:ABFRL": "NSE_EQ|INE647O01011",
@@ -88,7 +120,7 @@ MAPPING = {
     "NSE_EQ:RCF": "NSE_EQ|INE027A01015",
 
     # =======================
-    # ✅ NEW AGE / MOMENTUM
+    # ✅ NEW AGE
     # =======================
     "NSE_EQ:ZOMATO": "NSE_EQ|INE758T01015",
     "NSE_EQ:PAYTM": "NSE_EQ|INE982J01020",
@@ -96,9 +128,7 @@ MAPPING = {
     "NSE_EQ:POLICYBZR": "NSE_EQ|INE417T01026",
 
     # =======================
-    # ✅ SPECIAL / HIGH BETA
+    # ✅ SPECIAL
     # =======================
-    "NSE_EQ:NETWEB": "NSE_EQ|INE0NT901020",
-    "NSE_EQ:RUBYMILLS": "NSE_EQ|INE301D01026",
-    "NSE_EQ:KCP": "NSE_EQ|INE805C01028"
+    "NSE_EQ:NETWEB": "NSE_EQ|INE0NT901020"
 }
