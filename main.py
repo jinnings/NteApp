@@ -3,8 +3,8 @@ import time
 import traceback
 
 from strategy import MultiSignalStrategy
-from config import ACCESS_TOKEN
 from mapping import MAPPING
+from config import ACCESS_TOKEN
 from alerts import send_alert
 
 strategy = MultiSignalStrategy()
@@ -12,12 +12,8 @@ strategy = MultiSignalStrategy()
 print("🚀 Bot running ✅")
 send_alert("🤖 BOT STARTED ✅")
 
-last_prices = {}
-scan_cycle = 0
-
 
 def get_prices_batch(mapping):
-
     url = "https://api.upstox.com/v2/market-quote/quotes"
     headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
 
@@ -25,7 +21,7 @@ def get_prices_batch(mapping):
     keys = list(mapping.values())
 
     for i in range(0, len(keys), 20):
-        batch = keys[i:i + 20]
+        batch = keys[i:i+20]
 
         try:
             res = requests.get(
@@ -37,16 +33,15 @@ def get_prices_batch(mapping):
 
             data = res.json()
 
-            for _, value in data.get("data", {}).items():
-
-                symbol = value.get("symbol") or value.get("instrument_key")
+            for _, v in data.get("data", {}).items():
+                symbol = v.get("symbol") or v.get("instrument_key")
 
                 if not symbol:
                     continue
 
                 prices[symbol] = {
-                    "price": value.get("last_price"),
-                    "volume": value.get("volume", 0)
+                    "price": v.get("last_price"),
+                    "volume": v.get("volume", 0)
                 }
 
         except Exception as e:
@@ -57,14 +52,12 @@ def get_prices_batch(mapping):
 
 while True:
     try:
-        scan_cycle += 1
-
         prices = get_prices_batch(MAPPING)
 
-        for symbol, data in prices.items():
-            strategy.update(symbol, data["price"], data["volume"])
+        for symbol, d in prices.items():
+            strategy.update(symbol, d["price"], d["volume"])
 
-        print(f"📊 Cycle {scan_cycle} | Stocks: {len(prices)} ✅")
+        print(f"📊 Scanned: {len(prices)} stocks")
 
     except Exception:
         print(traceback.format_exc())
