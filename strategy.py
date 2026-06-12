@@ -13,7 +13,7 @@ class MultiSignalStrategy:
         self.sent_priority = {}
 
         self.day_open = {}
-        self.COOLDOWN = 120
+        self.COOLDOWN = 60   # ✅ faster alerts
 
     def can_send(self, symbol, priority):
         now = time.time()
@@ -41,54 +41,55 @@ class MultiSignalStrategy:
             return False
 
         avg = sum(vols[-5:]) / 5
-        return volume > avg * 1.5
+        return volume > avg * 1.3   # ✅ easier trigger
 
     def calculate_score(self, price, vwap, day_change, momentum, vol_spike):
 
         score = 0
 
-        score += min(abs(day_change) * 5, 20)
+        # ✅ relaxed scoring
+        score += min(abs(day_change) * 4, 15)
 
-        if abs(momentum) > 1:
-            score += min(abs(momentum) * 5, 10)
+        if abs(momentum) > 0.3:
+            score += min(abs(momentum) * 4, 8)
 
         if price > vwap:
-            score += 10
+            score += 8
         else:
-            score += 5
+            score += 4
 
         if vol_spike:
-            score += 15
+            score += 10
 
         return int(score)
 
     def update(self, symbol, price, volume):
 
-        if not symbol or price is None or volume < 10000:
+        if not symbol or price is None or volume < 8000:
             return
 
         self.price_history[symbol].append(price)
         prices = list(self.price_history[symbol])
 
-        if len(prices) < 30:
+        if len(prices) < 15:   # ✅ faster warmup
             return
 
         vwap = sum(prices) / len(prices)
-        momentum = prices[-1] - prices[-3]
+        momentum = prices[-1] - prices[-2]  # ✅ faster momentum
         day_change = self.get_day_change(symbol, price)
 
-        # ✅ skip dead stocks
-        if abs(day_change) < 0.5:
+        # ✅ VERY IMPORTANT: relaxed filter
+        if abs(day_change) < 0.1:
             return
 
         vol_spike = self.volume_spike(symbol, volume)
         score = self.calculate_score(price, vwap, day_change, momentum, vol_spike)
 
-        # ✅ BEST SETTINGS
-        if score >= 26:
+        # ✅ BIG FIX: lower threshold
+        if score >= 15:
 
             direction = "🟢 BUY" if momentum > 0 else "🔴 SELL"
-            confidence = "🔥 STRONG" if score >= 38 else "✅ GOOD"
+            confidence = "🔥 STRONG" if score >= 22 else "✅ GOOD"
 
             if self.can_send(symbol, 4):
 
