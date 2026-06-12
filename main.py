@@ -57,6 +57,9 @@ while True:
         for symbol, d in prices.items():
             strategy.update(symbol, d["price"], d["volume"])
 
+        # ✅ process ranked signals
+        strategy.process_top_signals()
+
         print(f"📊 Scanned: {len(prices)} stocks")
 
     except Exception:
