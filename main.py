@@ -1,5 +1,6 @@
 import requests
 import time
+import traceback
 
 from strategy import MultiSignalStrategy
 from config import ACCESS_TOKEN
@@ -9,16 +10,28 @@ from alerts import send_alert
 strategy = MultiSignalStrategy()
 
 print("🚀 Bot running ✅")
-send_alert("🤖 BOT STARTED ✅\n\n🚀 Trading system is now active")
+
+# ✅ BOT START MESSAGE
+send_alert(f"""
+🤖 NteApp STARTED ✅
+
+🕒 {time.strftime('%H:%M:%S')}
+🚀 Trading system is now active
+""")
 
 last_prices = {}
 scan_cycle = 0
-
-# ✅ send only once
 nifty_sent = False
 
+# ✅ heartbeat
+last_heartbeat = time.time()
 
-# ✅ ✅ NIFTY SENTIMENT FUNCTION
+# ✅ error tracking (NO global needed)
+last_error = ""
+last_error_time = 0
+
+
+# ✅ NIFTY SENTIMENT
 def nifty_sentiment_message(open_price, current_price, prev_close=None):
 
     if not open_price or not current_price:
@@ -41,8 +54,6 @@ def nifty_sentiment_message(open_price, current_price, prev_close=None):
             gap_msg = f"📊 GAP UP (+{round(gap,2)}%)"
         elif gap < -0.5:
             gap_msg = f"📊 GAP DOWN ({round(gap,2)}%)"
-        else:
-            gap_msg = f"📊 FLAT OPEN ({round(gap,2)}%)"
 
     return f"""
 📊 NIFTY MARKET OPEN
@@ -53,12 +64,11 @@ def nifty_sentiment_message(open_price, current_price, prev_close=None):
 """
 
 
+# ✅ FETCH DATA
 def get_prices_batch(mapping):
     url = "https://api.upstox.com/v2/market-quote/quotes"
 
-    headers = {
-        "Authorization": f"Bearer {ACCESS_TOKEN}"
-    }
+    headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
 
     prices = {}
     keys = list(mapping.values())
@@ -98,26 +108,23 @@ def get_prices_batch(mapping):
     return prices
 
 
+# ✅ MAIN LOOP
 while True:
     try:
         scan_cycle += 1
 
-        # ✅ CORE stocks
         prices = get_prices_batch(CORE_MAPPING)
 
-        # ✅ MOMENTUM stocks every 3 cycles
         if scan_cycle % 3 == 0:
             prices.update(get_prices_batch(MOMENTUM_MAPPING))
 
-        # ✅ fallback
         if not prices:
             prices = last_prices
         else:
             last_prices = prices
 
-        # ✅ ✅ NIFTY SENTIMENT (ONLY ONCE)
+        # ✅ NIFTY OPEN MESSAGE
         if not nifty_sent:
-
             nifty = prices.get("NIFTY")
 
             if nifty:
@@ -129,17 +136,51 @@ while True:
 
                 if msg:
                     send_alert(msg)
-                    print("✅ NIFTY sentiment sent")
-
                     nifty_sent = True
 
-        # ✅ ✅ MAIN STRATEGY (ALL ALERTS INSIDE THIS)
+        # ✅ STRATEGY RUN
         for symbol, data in prices.items():
             strategy.update(symbol, data["price"], data["volume"])
 
+        # ✅ HEARTBEAT (1 HOUR)
+        if time.time() - last_heartbeat > 3600:
+            send_alert(f"""
+🤖 BOT STATUS ✅
+
+⏳ Still scanning...
+📊 Stocks: {len(prices)}
+🕒 {time.strftime('%H:%M:%S')}
+""")
+            last_heartbeat = time.time()
+
         print(f"📊 Cycle {scan_cycle} | Stocks: {len(prices)}")
 
-    except Exception as e:
-        print("MAIN ERROR:", e)
+    except Exception:
+
+        error_text = traceback.format_exc()
+        now = time.time()
+
+        # ✅ prevent spam
+        if error_text != last_error or now - last_error_time > 60:
+
+            msg = f"""
+❌ BOT ERROR 🚨
+
+🕒 {time.strftime('%H:%M:%S')}
+
+{error_text}
+"""
+
+            print(msg)
+
+            try:
+                send_alert(msg)
+            except:
+                print("⚠️ Telegram failed")
+
+            last_error = error_text
+            last_error_time = now
+
+        time.sleep(5)
 
     time.sleep(5)
