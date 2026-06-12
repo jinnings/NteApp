@@ -15,7 +15,7 @@ class MultiSignalStrategy:
         self.day_open = {}
         self.COOLDOWN = 120
 
-    # ✅ PRIORITY CONTROL
+    # ✅ CONTROL
     def can_send(self, symbol, priority):
         now = time.time()
 
@@ -34,6 +34,7 @@ class MultiSignalStrategy:
     def get_day_change(self, symbol, price):
         if symbol not in self.day_open:
             self.day_open[symbol] = price
+
         return ((price - self.day_open[symbol]) / self.day_open[symbol]) * 100
 
     # ✅ VOLUME SPIKE
@@ -47,25 +48,21 @@ class MultiSignalStrategy:
         avg = sum(vols[-5:]) / 5
         return volume > avg * 1.5
 
-    # ✅ SCORE SYSTEM
+    # ✅ SCORE
     def calculate_score(self, price, vwap, day_change, momentum, vol_spike):
 
         score = 0
 
-        # Trend strength
         score += min(abs(day_change) * 5, 20)
 
-        # Momentum
         if abs(momentum) > 1:
             score += min(abs(momentum) * 5, 10)
 
-        # VWAP confirmation
         if price > vwap:
             score += 10
         else:
             score += 5
 
-        # Volume strength
         if vol_spike:
             score += 15
 
@@ -74,7 +71,7 @@ class MultiSignalStrategy:
     # ✅ MAIN LOGIC
     def update(self, symbol, price, volume):
 
-        if not symbol or price is None or volume < 50000:
+        if not symbol or price is None or volume < 20000:
             return
 
         self.price_history[symbol].append(price)
@@ -90,11 +87,11 @@ class MultiSignalStrategy:
 
         score = self.calculate_score(price, vwap, day_change, momentum, vol_spike)
 
-        # ✅ ONLY BEST SIGNALS
-        if score >= 40:
+        # ✅ KEY FIX: 30 threshold
+        if score >= 30:
 
             direction = "🟢 BUY" if momentum > 0 else "🔴 SELL"
-            confidence = "🔥 STRONG" if score >= 45 else "✅ GOOD"
+            confidence = "🔥 STRONG" if score >= 40 else "✅ GOOD"
 
             if self.can_send(symbol, 4):
 

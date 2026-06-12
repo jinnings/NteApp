@@ -30,18 +30,22 @@ last_error_time = 0
 
 # ✅ NIFTY SENTIMENT
 def nifty_sentiment_message(open_price, current_price, prev_close=None):
-
     if not open_price or not current_price:
         return None
 
     change = ((current_price - open_price) / open_price) * 100
 
-    trend = "📈 UP" if change > 0.5 else "📉 DOWN" if change < -0.5 else "➡️ FLAT"
+    if change > 0.5:
+        trend = "📈 UP"
+    elif change < -0.5:
+        trend = "📉 DOWN"
+    else:
+        trend = "➡️ FLAT"
 
     gap_msg = ""
     if prev_close:
         gap = ((open_price - prev_close) / prev_close) * 100
-        gap_msg = f"📊 GAP {('UP' if gap > 0 else 'DOWN')} ({round(gap,2)}%)"
+        gap_msg = f"📊 GAP {'UP' if gap > 0 else 'DOWN'} ({round(gap,2)}%)"
 
     return f"""
 📊 NIFTY MARKET OPEN
@@ -52,6 +56,7 @@ def nifty_sentiment_message(open_price, current_price, prev_close=None):
 """
 
 
+# ✅ DATA FETCH
 def get_prices_batch(mapping):
     url = "https://api.upstox.com/v2/market-quote/quotes"
     headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
@@ -76,7 +81,7 @@ def get_prices_batch(mapping):
                 continue
 
             for _, value in data["data"].items():
-                symbol = value.get("symbol")
+                symbol = value.get("symbol") or value.get("instrument_key")
 
                 if not symbol:
                     continue
@@ -112,12 +117,14 @@ while True:
         # ✅ NIFTY MESSAGE
         if not nifty_sent:
             nifty = prices.get("NIFTY")
+
             if nifty:
                 msg = nifty_sentiment_message(
                     nifty.get("open"),
                     nifty.get("price"),
                     nifty.get("prev_close")
                 )
+
                 if msg:
                     send_alert(msg)
                     nifty_sent = True
@@ -140,7 +147,6 @@ while True:
         print(f"📊 Cycle {scan_cycle} | Stocks: {len(prices)}")
 
     except Exception:
-
         error_text = traceback.format_exc()
         now = time.time()
 
