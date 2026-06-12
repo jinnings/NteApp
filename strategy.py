@@ -13,6 +13,9 @@ class MultiSignalStrategy:
         self.sent_priority = {}
         self.last_direction = {}
 
+        self.signal_history = {}
+        self.SIGNAL_COOLDOWN = 900  # 15 minutes
+
         self.day_open = {}
         self.COOLDOWN = 60
 
@@ -21,12 +24,21 @@ class MultiSignalStrategy:
 
         if symbol in self.last_sent_time:
             if now - self.last_sent_time[symbol] < self.COOLDOWN:
-                if self.sent_priority.get(symbol, 0) >= priority:
-                    return False
+                return False
 
         self.last_sent_time[symbol] = now
         self.sent_priority[symbol] = priority
         return True
+
+    def already_sent_recent(self, symbol, direction):
+        key = f"{symbol}_{direction}"
+        now = time.time()
+
+        if key in self.signal_history:
+            if now - self.signal_history[key] < self.SIGNAL_COOLDOWN:
+                return True
+
+        return False
 
     def get_day_change(self, symbol, price):
         if symbol not in self.day_open:
@@ -34,17 +46,20 @@ class MultiSignalStrategy:
 
         return ((price - self.day_open[symbol]) / self.day_open[symbol]) * 100
 
-    def volume_spike(self, symbol, volume):
-        self.volume_history[symbol].append(volume)
+    def is_volume_increasing(self, symbol):
         vols = list(self.volume_history[symbol])
+        return len(vols) >= 3 and vols[-1] > vols[-2] > vols[-3]
 
-        if len(vols) < 5:
+    def confirm_candle(self, prices, direction):
+        if len(prices) < 5:
             return False
 
-        avg = sum(vols[-5:]) / 5
-        return volume > avg * 1.3
+        if direction == "BUY":
+            return prices[-1] > prices[-2] > prices[-3]
+        else:
+            return prices[-1] < prices[-2] < prices[-3]
 
-    def calculate_score(self, price, vwap, day_change, momentum, vol_spike):
+    def calculate_score(self, price, vwap, day_change, momentum):
 
         score = 0
         score += min(abs(day_change) * 4, 15)
@@ -52,14 +67,7 @@ class MultiSignalStrategy:
         if abs(momentum) > 0.3:
             score += min(abs(momentum) * 4, 8)
 
-        if price > vwap:
-            score += 8
-        else:
-            score += 4
-
-        if vol_spike:
-            score += 10
-
+        score += 8 if price > vwap else 4
         return int(score)
 
     def update(self, symbol, price, volume):
@@ -68,6 +76,8 @@ class MultiSignalStrategy:
             return
 
         self.price_history[symbol].append(price)
+        self.volume_history[symbol].append(volume)
+
         prices = list(self.price_history[symbol])
 
         if len(prices) < 20:
@@ -75,49 +85,61 @@ class MultiSignalStrategy:
 
         vwap = sum(prices) / len(prices)
 
-        # ✅ multi-timeframe
-        momentum_1m = prices[-1] - prices[-3]
-        momentum_5m = prices[-1] - prices[-10]
+        # ✅ multi timeframe
+        m1 = prices[-1] - prices[-3]
+        m5 = prices[-1] - prices[-10]
 
-        dir_1m = "BUY" if momentum_1m > 0 else "SELL"
-        dir_5m = "BUY" if momentum_5m > 0 else "SELL"
+        dir1 = "BUY" if m1 > 0 else "SELL"
+        dir5 = "BUY" if m5 > 0 else "SELL"
 
-        # ✅ confirmation
-        if dir_1m != dir_5m:
+        if dir1 != dir5:
             return
 
-        direction = dir_1m
+        direction = dir1
 
         day_change = self.get_day_change(symbol, price)
-
         if abs(day_change) < 0.1:
             return
 
-        vol_spike = self.volume_spike(symbol, volume)
+        score = self.calculate_score(price, vwap, day_change, m5)
+        if score < 15:
+            return
 
-        score = self.calculate_score(price, vwap, day_change, momentum_5m, vol_spike)
+        # ✅ filters
+        if not self.is_volume_increasing(symbol):
+            return
 
-        if score >= 15:
+        if not self.confirm_candle(prices, direction):
+            return
 
-            # ✅ prevent flip
-            prev_dir = self.last_direction.get(symbol)
-            if prev_dir and prev_dir != direction:
-                return
+        if self.already_sent_recent(symbol, direction):
+            return
 
-            confidence = "🔥 STRONG" if score >= 22 else "✅ GOOD"
+        prev_dir = self.last_direction.get(symbol)
+        if prev_dir and prev_dir != direction:
+            return
 
-            if self.can_send(symbol, 4):
+        if not self.can_send(symbol, 4):
+            return
 
-                self.last_direction[symbol] = direction
+        # ✅ save state
+        self.last_direction[symbol] = direction
+        self.signal_history[f"{symbol}_{direction}"] = time.time()
 
-                send_alert(f"""
-🔥 TOP INTRADAY SETUPS 🔥
+        message = f"""
+🔥 TRADE ALERT 🔥
 
 📊 {symbol} → {'🟢 BUY' if direction=='BUY' else '🔴 SELL'}
 
 💰 Entry: ₹{round(price,2)}
 
-⭐ Score: {score} | {confidence}
-📈 1M: {round(momentum_1m,2)} | 5M: {round(momentum_5m,2)}
+⭐ Score: {score}
+📈 1M: {round(m1,2)} | 5M: {round(m5,2)}
 📊 Change: {round(day_change,2)}%
-""")
+
+✅ Volume Rising
+✅ Candle Confirmed
+✅ No Repeat (15min)
+"""
+
+        send_alert(message)
