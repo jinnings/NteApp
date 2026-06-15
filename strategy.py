@@ -9,20 +9,15 @@ class MultiSignalStrategy:
         self.price_history = defaultdict(lambda: deque(maxlen=100))
         self.volume_history = defaultdict(lambda: deque(maxlen=20))
 
-        self.last_sent_time = {}
         self.last_direction = {}
-
         self.signal_history = {}
-        self.SIGNAL_COOLDOWN = 900  # 15 min
 
+        self.SIGNAL_COOLDOWN = 900
         self.day_open = {}
-        self.COOLDOWN = 60
 
-        # ✅ ranking storage
         self.candidates = []
         self.last_rank_sent = 0
 
-    # ✅ duplicate block
     def already_sent_recent(self, symbol, direction):
         key = f"{symbol}_{direction}"
         return key in self.signal_history and time.time() - self.signal_history[key] < self.SIGNAL_COOLDOWN
@@ -41,27 +36,51 @@ class MultiSignalStrategy:
             return False
         if direction == "BUY":
             return prices[-1] > prices[-2] > prices[-3]
-        else:
-            return prices[-1] < prices[-2] < prices[-3]
-
-    def is_pullback(self, prices, direction):
-        if len(prices) < 6:
-            return False
-        if direction == "BUY":
-            return prices[-5] > prices[-3] and prices[-1] > prices[-2]
-        else:
-            return prices[-5] < prices[-3] and prices[-1] < prices[-2]
+        return prices[-1] < prices[-2] < prices[-3]
 
     def is_breakout(self, prices, direction):
         if len(prices) < 10:
             return False
         if direction == "BUY":
             return prices[-1] > max(prices[-10:-1])
-        else:
-            return prices[-1] < min(prices[-10:-1])
+        return prices[-1] < min(prices[-10:-1])
 
     def vwap_trend(self, price, vwap, direction):
         return price > vwap if direction == "BUY" else price < vwap
+
+    # ✅ ENTRY IMPROVEMENT FUNCTIONS
+
+    def breakout_hold(self, prices, direction):
+        if len(prices) < 5:
+            return False
+        if direction == "BUY":
+            return prices[-1] >= prices[-2]
+        return prices[-1] <= prices[-2]
+
+    def not_overextended(self, prices):
+        move = abs(prices[-1] - prices[-5])
+        return move < (prices[-1] * 0.02)
+
+    def strong_pullback_entry(self, prices, direction):
+
+        if len(prices) < 6:
+            return False
+
+        if direction == "BUY":
+            return (
+                prices[-3] > prices[-4] and  # up move
+                prices[-2] < prices[-3] and  # pullback
+                prices[-1] > prices[-2]      # bounce ✅
+            )
+
+        if direction == "SELL":
+            return (
+                prices[-3] < prices[-4] and
+                prices[-2] > prices[-3] and
+                prices[-1] < prices[-2]
+            )
+
+        return False
 
     def calculate_score(self, price, vwap, day_change, momentum):
         score = 0
@@ -71,7 +90,6 @@ class MultiSignalStrategy:
         score += 8 if price > vwap else 4
         return int(score)
 
-    # ✅ MAIN LOGIC
     def update(self, symbol, price, volume):
 
         if not symbol or price is None or volume < 8000:
@@ -81,12 +99,13 @@ class MultiSignalStrategy:
         self.volume_history[symbol].append(volume)
 
         prices = list(self.price_history[symbol])
+
         if len(prices) < 20:
             return
 
         vwap = sum(prices) / len(prices)
 
-        # ✅ trend
+        # ✅ Trend
         m1 = prices[-1] - prices[-3]
         m5 = prices[-1] - prices[-10]
 
@@ -98,11 +117,8 @@ class MultiSignalStrategy:
 
         direction = dir1
 
-        # ✅ filters
+        # ✅ Core filters
         if not self.vwap_trend(price, vwap, direction):
-            return
-
-        if not self.is_pullback(prices, direction):
             return
 
         if not self.is_breakout(prices, direction):
@@ -112,6 +128,16 @@ class MultiSignalStrategy:
             return
 
         if not self.confirm_candle(prices, direction):
+            return
+
+        # ✅ NEW ENTRY TIMING LOGIC 🔥
+        if not self.breakout_hold(prices, direction):
+            return
+
+        if not self.not_overextended(prices):
+            return
+
+        if not self.strong_pullback_entry(prices, direction):
             return
 
         if self.already_sent_recent(symbol, direction):
@@ -127,7 +153,7 @@ class MultiSignalStrategy:
 
         score = self.calculate_score(price, vwap, day_change, m5)
 
-        # ✅ 🚀 INSTANT SIGNAL (FAST ENTRY)
+        # ✅ Instant trade
         if score >= 22:
 
             message = f"""
@@ -143,8 +169,8 @@ class MultiSignalStrategy:
             self.last_direction[symbol] = direction
             return
 
-        # ✅ NORMAL STORE FOR RANKING
-        if score >= 15:
+        # ✅ Store strong only
+        if score > 18:
             self.candidates.append({
                 "symbol": symbol,
                 "direction": direction,
@@ -152,7 +178,6 @@ class MultiSignalStrategy:
                 "score": score
             })
 
-    # ✅ SEND TOP TRADES
     def process_top_signals(self):
 
         if time.time() - self.last_rank_sent < 60:

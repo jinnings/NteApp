@@ -2,9 +2,7 @@ import requests
 import time
 import traceback
 
-from strategy import MultiSignalStrategy
-from mapping import MAPPING
-from config import ACCESS_TOKEN
+from strategyfrom strategy import MultiSignalStrategy
 from alerts import send_alert
 
 strategy = MultiSignalStrategy()
@@ -14,6 +12,7 @@ send_alert("🤖 BOT STARTED ✅")
 
 
 def get_prices_batch(mapping):
+
     url = "https://api.upstox.com/v2/market-quote/quotes"
     headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
 
@@ -21,6 +20,7 @@ def get_prices_batch(mapping):
     keys = list(mapping.values())
 
     for i in range(0, len(keys), 20):
+
         batch = keys[i:i+20]
 
         try:
@@ -34,6 +34,7 @@ def get_prices_batch(mapping):
             data = res.json()
 
             for _, v in data.get("data", {}).items():
+
                 symbol = v.get("symbol") or v.get("instrument_key")
 
                 if not symbol:
@@ -57,7 +58,6 @@ while True:
         for symbol, d in prices.items():
             strategy.update(symbol, d["price"], d["volume"])
 
-        # ✅ process ranked signals
         strategy.process_top_signals()
 
         print(f"📊 Scanned: {len(prices)} stocks")
@@ -66,3 +66,4 @@ while True:
         print(traceback.format_exc())
 
     time.sleep(5)
+from mapping import MAPPING
