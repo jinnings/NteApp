@@ -1,5 +1,7 @@
 from collections import defaultdict
 import time
+import pandas as pd
+import os
 from alerts import send_alert
 
 
@@ -7,7 +9,6 @@ class MultiSignalStrategy:
 
     def __init__(self):
 
-        # ✅ candle storage
         self.candles_5m = defaultdict(list)
         self.current_5m = {}
 
@@ -15,15 +16,15 @@ class MultiSignalStrategy:
         self.current_15m = {}
 
         self.signal_history = {}
-        self.candidates = []
-        self.last_rank_sent = 0
-
         self.SIGNAL_COOLDOWN = 900
 
-    # ======================
-    # ✅ CANDLE BUILDING
-    # ======================
+        self.trades = []
+        self.excel_file = "trades.xlsx"
 
+        # ✅ store volume history (FIXED)
+        self.volume_history = defaultdict(list)
+
+    # ✅ Candle builder
     def build_candle(self, symbol, price, minutes, store, current):
 
         now = int(time.time() // 60)
@@ -59,14 +60,11 @@ class MultiSignalStrategy:
     def get_closes(self, candles):
         return [c["close"] for c in candles]
 
-    # ======================
-    # ✅ UTILS
-    # ======================
-
     def already_sent_recent(self, symbol, tag):
         key = f"{symbol}_{tag}"
         return key in self.signal_history and time.time() - self.signal_history[key] < self.SIGNAL_COOLDOWN
 
+    # ✅ Fibonacci
     def fibonacci(self, prices):
         high = max(prices[-10:])
         low = min(prices[-10:])
@@ -77,67 +75,58 @@ class MultiSignalStrategy:
             "target": high + diff * 0.27
         }
 
-    # ======================
-    # ✅ TREND (15M)
-    # ======================
+    # ✅ Save trades
+    def save_trade(self, symbol, strategy, entry, sl, target, score):
 
+        trade = {
+            "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "symbol": symbol,
+            "strategy": strategy,
+            "entry": round(entry, 2),
+            "sl": round(sl, 2),
+            "target": round(target, 2),
+            "score": score
+        }
+
+        self.trades.append(trade)
+
+        df = pd.DataFrame(self.trades)
+
+        if os.path.exists(self.excel_file):
+            old_df = pd.read_excel(self.excel_file)
+            df = pd.concat([old_df, df]).drop_duplicates().reset_index(drop=True)
+
+        df.to_excel(self.excel_file, index=False)
+
+    # ✅ Trend
     def trend_15m(self, closes):
-
         if len(closes) < 5:
             return None
 
         if closes[-1] > closes[-3]:
             return "BUY"
-
-        if closes[-1] < closes[-3]:
+        elif closes[-1] < closes[-3]:
             return "SELL"
 
         return None
 
-    # ======================
-    # ✅ PULLBACK
-    # ======================
-
-    def pullback_entry(self, closes, vwap):
-
-        if len(closes) < 12:
-            return False
-
-        if not closes[-5] > closes[-10]:
-            return False
-
-        high = max(closes[-8:-3])
-        low = closes[-2]
-
-        pullback = (high - low) / high * 100
-
-        if not (0.5 <= pullback <= 2.5):
-            return False
-
-        if abs(closes[-2] - vwap) > closes[-2] * 0.01:
-            return False
-
-        return closes[-1] > closes[-2]
-
-    # ======================
-    # ✅ BREAKOUT
-    # ======================
-
+    # ✅ Breakout
     def breakout(self, closes):
         if len(closes) < 10:
             return False
-        return closes[-1] > max(closes[-10:-1])
+        return closes[-1] > max(closes[-10:-1]) and closes[-1] > closes[-2]
 
-    # ======================
-    # ✅ MAIN UPDATE
-    # ======================
-
+    # ✅ MAIN LOGIC
     def update(self, symbol, price, volume):
 
         if price is None:
             return
 
-        # ✅ build candles
+        # ✅ track volume history (NEW FIX)
+        self.volume_history[symbol].append(volume)
+        if len(self.volume_history[symbol]) > 20:
+            self.volume_history[symbol].pop(0)
+
         self.build_candle(symbol, price, 5, self.candles_5m, self.current_5m)
         self.build_candle(symbol, price, 15, self.candles_15m, self.current_15m)
 
@@ -149,22 +138,20 @@ class MultiSignalStrategy:
 
         trend15 = self.trend_15m(closes_15)
 
-        vwap = sum(closes_5) / len(closes_5)
+        # =========================
+        # 💥 VOLUME SPIKE SNIPER (FIXED ✅)
+        # =========================
+        if len(self.volume_history[symbol]) >= 10:
+            avg_vol = sum(self.volume_history[symbol][-10:]) / 10
 
-        # ======================
-        # ✅ PULLBACK STRATEGY
-        # ======================
+            if volume > avg_vol * 2 and trend15 == "BUY":
 
-        if trend15 == "BUY":
-
-            if self.pullback_entry(closes_5, vwap):
-
-                if not self.already_sent_recent(symbol, "PULLBACK"):
+                if not self.already_sent_recent(symbol, "SNIPER"):
 
                     fib = self.fibonacci(closes_5)
 
                     send_alert(f"""
-📉 PULLBACK BUY (5M+15M) 📈
+💥 VOLUME SPIKE SNIPER 💥
 
 {symbol}
 
@@ -172,93 +159,75 @@ class MultiSignalStrategy:
 🛑 SL: ₹{round(fib['sl'],2)}
 🎯 Target: ₹{round(fib['target'],2)}
 
-✅ 15M Trend UP
-✅ VWAP Support
-✅ Pullback + Bounce
+🚀 Volume spike detected
 """)
 
-                    self.signal_history[f"{symbol}_PULLBACK"] = time.time()
+                    self.signal_history[f"{symbol}_SNIPER"] = time.time()
+                    self.save_trade(symbol, "SNIPER", closes_5[-1], fib["sl"], fib["target"], 25)
 
-        # ======================
-        # ✅ BREAKOUT STRATEGY
-        # ======================
+        # =========================
+        # ⚡ SCALPING MODE
+        # =========================
+        price_jump = (closes_5[-1] - closes_5[-2]) / closes_5[-2] * 100
 
-        direction = "BUY"
+        if trend15 == "BUY" and price_jump > 0.3:
 
-        if trend15 != direction:
+            if not self.already_sent_recent(symbol, "SCALP"):
+
+                fib = self.fibonacci(closes_5)
+
+                send_alert(f"""
+⚡ SCALPING TRADE ⚡
+
+{symbol}
+
+💰 Entry: ₹{round(closes_5[-1],2)}
+🛑 SL: ₹{round(fib['sl'],2)}
+🎯 Target: ₹{round(fib['target'],2)}
+
+⚡ Quick momentum move
+""")
+
+                self.signal_history[f"{symbol}_SCALP"] = time.time()
+                self.save_trade(symbol, "SCALP", closes_5[-1], fib["sl"], fib["target"], 15)
+
+        # =========================
+        # 🚀 ELITE BREAKOUT
+        # =========================
+        if trend15 != "BUY":
             return
 
         if not self.breakout(closes_5):
             return
 
-        score = int(abs(closes_5[-1] - closes_5[-5]) * 2)
+        # ✅ SMART SCORE
+        momentum = (closes_5[-1] - closes_5[-5]) / closes_5[-5] * 100
+        candle_strength = (closes_5[-1] - closes_5[-2]) / closes_5[-2] * 100
+        volume_boost = min(volume / 100000, 10)
+
+        score = int(momentum * 3 + candle_strength * 2 + volume_boost)
+
+        if closes_5[-1] <= closes_5[-2]:
+            return
+
+        if (closes_5[-1] - closes_5[-2]) / closes_5[-2] < 0.2:
+            return
 
         fib = self.fibonacci(closes_5)
 
-        entry = closes_5[-1]
-        sl = fib["sl"]
-        target = fib["target"]
-
-        # ✅ instant trades
-        if score >= 22 and not self.already_sent_recent(symbol, "BUY"):
+        if score >= 20 and not self.already_sent_recent(symbol, "BUY"):
 
             send_alert(f"""
-🔥 INSTANT TRADE (5M+15M) 🔥
+🚀 ELITE BREAKOUT 🚀
 
 {symbol}
 
-💰 Entry: ₹{round(entry,2)}
-🛑 SL: ₹{round(sl,2)}
-🎯 Target: ₹{round(target,2)}
+💰 Entry: ₹{round(closes_5[-1],2)}
+🛑 SL: ₹{round(fib['sl'],2)}
+🎯 Target: ₹{round(fib['target'],2)}
 
 ⭐ Score: {score}
 """)
 
             self.signal_history[f"{symbol}_BUY"] = time.time()
-            return
-
-        # ✅ ranking
-        if score > 18:
-            self.candidates.append({
-                "symbol": symbol,
-                "price": entry,
-                "score": score,
-                "sl": sl,
-                "target": target
-            })
-
-    # ======================
-    # ✅ TOP SIGNALS
-    # ======================
-
-    def process_top_signals(self):
-
-        if time.time() - self.last_rank_sent < 60:
-            return
-
-        if not self.candidates:
-            return
-
-        top = sorted(self.candidates, key=lambda x: x["score"], reverse=True)[:3]
-
-        for t in top:
-
-            if self.already_sent_recent(t["symbol"], "TOP"):
-                continue
-
-            send_alert(f"""
-🔥 TOP TRADE (5M+15M) 🔥
-
-{t['symbol']}
-
-💰 Entry: ₹{round(t['price'],2)}
-🛑 SL: ₹{round(t['sl'],2)}
-🎯 Target: ₹{round(t['target'],2)}
-
-⭐ Score: {t['score']}
-""")
-
-            self.signal_history[f"{t['symbol']}_TOP"] = time.time()
-
-        self.candidates.clear()
-        self.last_rank_sent = time.time()
+            self.save_trade(symbol, "BREAKOUT", closes_5[-1], fib["sl"], fib["target"], score)
