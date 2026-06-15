@@ -2,7 +2,9 @@ import requests
 import time
 import traceback
 
-from strategyfrom strategy import MultiSignalStrategy
+from strategy import MultiSignalStrategy
+from mapping import MAPPING
+from config import ACCESS_TOKEN
 from alerts import send_alert
 
 strategy = MultiSignalStrategy()
