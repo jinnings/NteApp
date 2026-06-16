@@ -65,4 +65,4 @@ while True:
     except Exception:
         print(traceback.format_exc())
 
-    time.sleep(2)
+    time.sleep(5)
