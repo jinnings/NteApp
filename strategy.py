@@ -1,236 +1,158 @@
-from collections import defaultdict
+from collections import defaultdict, deque
 import time
 from alerts import send_alert
 
 
 class MultiSignalStrategy:
-
     def __init__(self):
 
-        # ✅ candle storage
-        self.candles_5m = defaultdict(list)
-        self.current_5m = {}
+        self.price_history = defaultdict(lambda: deque(maxlen=100))
+        self.volume_history = defaultdict(lambda: deque(maxlen=20))
 
-        self.candles_15m = defaultdict(list)
-        self.current_15m = {}
+        self.last_sent_time = {}
+        self.last_direction = {}
 
         self.signal_history = {}
+        self.SIGNAL_COOLDOWN = 900  # 15 min
+
+        self.day_open = {}
+        self.COOLDOWN = 60
+
+        # ✅ ranking storage
         self.candidates = []
         self.last_rank_sent = 0
 
-        self.SIGNAL_COOLDOWN = 900
-
-    # ======================
-    # ✅ CANDLE BUILDING
-    # ======================
-
-    def build_candle(self, symbol, price, minutes, store, current):
-
-        now = int(time.time() // 60)
-        bucket = now // minutes
-
-        if symbol not in current:
-            current[symbol] = {
-                "bucket": bucket,
-                "open": price,
-                "high": price,
-                "low": price,
-                "close": price
-            }
-            return
-
-        candle = current[symbol]
-
-        if candle["bucket"] == bucket:
-            candle["high"] = max(candle["high"], price)
-            candle["low"] = min(candle["low"], price)
-            candle["close"] = price
-        else:
-            store[symbol].append(candle.copy())
-
-            current[symbol] = {
-                "bucket": bucket,
-                "open": price,
-                "high": price,
-                "low": price,
-                "close": price
-            }
-
-    def get_closes(self, candles):
-        return [c["close"] for c in candles]
-
-    # ======================
-    # ✅ UTILS
-    # ======================
-
-    def already_sent_recent(self, symbol, tag):
-        key = f"{symbol}_{tag}"
+    # ✅ duplicate block
+    def already_sent_recent(self, symbol, direction):
+        key = f"{symbol}_{direction}"
         return key in self.signal_history and time.time() - self.signal_history[key] < self.SIGNAL_COOLDOWN
 
-    def fibonacci(self, prices):
-        high = max(prices[-10:])
-        low = min(prices[-10:])
-        diff = high - low
+    def get_day_change(self, symbol, price):
+        if symbol not in self.day_open:
+            self.day_open[symbol] = price
+        return ((price - self.day_open[symbol]) / self.day_open[symbol]) * 100
 
-        return {
-            "sl": high - diff * 0.618,
-            "target": high + diff * 0.27
-        }
+    def is_volume_increasing(self, symbol):
+        vols = list(self.volume_history[symbol])
+        return len(vols) >= 3 and vols[-1] > vols[-2] > vols[-3]
 
-    # ======================
-    # ✅ TREND (15M)
-    # ======================
-
-    def trend_15m(self, closes):
-
-        if len(closes) < 5:
-            return None
-
-        if closes[-1] > closes[-3]:
-            return "BUY"
-
-        if closes[-1] < closes[-3]:
-            return "SELL"
-
-        return None
-
-    # ======================
-    # ✅ PULLBACK
-    # ======================
-
-    def pullback_entry(self, closes, vwap):
-
-        if len(closes) < 12:
+    def confirm_candle(self, prices, direction):
+        if len(prices) < 5:
             return False
+        if direction == "BUY":
+            return prices[-1] > prices[-2] > prices[-3]
+        else:
+            return prices[-1] < prices[-2] < prices[-3]
 
-        if not closes[-5] > closes[-10]:
+    def is_pullback(self, prices, direction):
+        if len(prices) < 6:
             return False
+        if direction == "BUY":
+            return prices[-5] > prices[-3] and prices[-1] > prices[-2]
+        else:
+            return prices[-5] < prices[-3] and prices[-1] < prices[-2]
 
-        high = max(closes[-8:-3])
-        low = closes[-2]
-
-        pullback = (high - low) / high * 100
-
-        if not (0.5 <= pullback <= 2.5):
+    def is_breakout(self, prices, direction):
+        if len(prices) < 10:
             return False
+        if direction == "BUY":
+            return prices[-1] > max(prices[-10:-1])
+        else:
+            return prices[-1] < min(prices[-10:-1])
 
-        if abs(closes[-2] - vwap) > closes[-2] * 0.01:
-            return False
+    def vwap_trend(self, price, vwap, direction):
+        return price > vwap if direction == "BUY" else price < vwap
 
-        return closes[-1] > closes[-2]
+    def calculate_score(self, price, vwap, day_change, momentum):
+        score = 0
+        score += min(abs(day_change) * 4, 15)
+        if abs(momentum) > 0.3:
+            score += min(abs(momentum) * 4, 8)
+        score += 8 if price > vwap else 4
+        return int(score)
 
-    # ======================
-    # ✅ BREAKOUT
-    # ======================
-
-    def breakout(self, closes):
-        if len(closes) < 10:
-            return False
-        return closes[-1] > max(closes[-10:-1])
-
-    # ======================
-    # ✅ MAIN UPDATE
-    # ======================
-
+    # ✅ MAIN LOGIC
     def update(self, symbol, price, volume):
 
-        if price is None:
+        if not symbol or price is None or volume < 8000:
             return
 
-        # ✅ build candles
-        self.build_candle(symbol, price, 5, self.candles_5m, self.current_5m)
-        self.build_candle(symbol, price, 15, self.candles_15m, self.current_15m)
+        self.price_history[symbol].append(price)
+        self.volume_history[symbol].append(volume)
 
-        closes_5 = self.get_closes(self.candles_5m[symbol])
-        closes_15 = self.get_closes(self.candles_15m[symbol])
-
-        if len(closes_5) < 15 or len(closes_15) < 5:
+        prices = list(self.price_history[symbol])
+        if len(prices) < 20:
             return
 
-        trend15 = self.trend_15m(closes_15)
+        vwap = sum(prices) / len(prices)
 
-        vwap = sum(closes_5) / len(closes_5)
+        # ✅ trend
+        m1 = prices[-1] - prices[-3]
+        m5 = prices[-1] - prices[-10]
 
-        # ======================
-        # ✅ PULLBACK STRATEGY
-        # ======================
+        dir1 = "BUY" if m1 > 0 else "SELL"
+        dir5 = "BUY" if m5 > 0 else "SELL"
 
-        if trend15 == "BUY":
-
-            if self.pullback_entry(closes_5, vwap):
-
-                if not self.already_sent_recent(symbol, "PULLBACK"):
-
-                    fib = self.fibonacci(closes_5)
-
-                    send_alert(f"""
-📉 PULLBACK BUY (5M+15M) 📈
-
-{symbol}
-
-💰 Entry: ₹{round(closes_5[-1],2)}
-🛑 SL: ₹{round(fib['sl'],2)}
-🎯 Target: ₹{round(fib['target'],2)}
-
-✅ 15M Trend UP
-✅ VWAP Support
-✅ Pullback + Bounce
-""")
-
-                    self.signal_history[f"{symbol}_PULLBACK"] = time.time()
-
-        # ======================
-        # ✅ BREAKOUT STRATEGY
-        # ======================
-
-        direction = "BUY"
-
-        if trend15 != direction:
+        if dir1 != dir5:
             return
 
-        if not self.breakout(closes_5):
+        direction = dir1
+
+        # ✅ filters
+        if not self.vwap_trend(price, vwap, direction):
             return
 
-        score = int(abs(closes_5[-1] - closes_5[-5]) * 2)
+        if not self.is_pullback(prices, direction):
+            return
 
-        fib = self.fibonacci(closes_5)
+        if not self.is_breakout(prices, direction):
+            return
 
-        entry = closes_5[-1]
-        sl = fib["sl"]
-        target = fib["target"]
+        if not self.is_volume_increasing(symbol):
+            return
 
-        # ✅ instant trades
-        if score >= 22 and not self.already_sent_recent(symbol, "BUY"):
+        if not self.confirm_candle(prices, direction):
+            return
 
-            send_alert(f"""
-🔥 INSTANT TRADE (5M+15M) 🔥
+        if self.already_sent_recent(symbol, direction):
+            return
 
-{symbol}
+        prev_dir = self.last_direction.get(symbol)
+        if prev_dir and prev_dir != direction:
+            return
 
-💰 Entry: ₹{round(entry,2)}
-🛑 SL: ₹{round(sl,2)}
-🎯 Target: ₹{round(target,2)}
+        day_change = self.get_day_change(symbol, price)
+        if abs(day_change) < 0.1:
+            return
 
+        score = self.calculate_score(price, vwap, day_change, m5)
+
+        # ✅ 🚀 INSTANT SIGNAL (FAST ENTRY)
+        if score >= 22:
+
+            message = f"""
+🔥 INSTANT TRADE 🔥
+{symbol} → {direction}
+₹{round(price,2)}
 ⭐ Score: {score}
-""")
+"""
 
-            self.signal_history[f"{symbol}_BUY"] = time.time()
+            send_alert(message)
+
+            self.signal_history[f"{symbol}_{direction}"] = time.time()
+            self.last_direction[symbol] = direction
             return
 
-        # ✅ ranking
-        if score > 18:
+        # ✅ NORMAL STORE FOR RANKING
+        if score >= 15:
             self.candidates.append({
                 "symbol": symbol,
-                "price": entry,
-                "score": score,
-                "sl": sl,
-                "target": target
+                "direction": direction,
+                "price": price,
+                "score": score
             })
 
-    # ======================
-    # ✅ TOP SIGNALS
-    # ======================
-
+    # ✅ SEND TOP TRADES
     def process_top_signals(self):
 
         if time.time() - self.last_rank_sent < 60:
@@ -243,22 +165,25 @@ class MultiSignalStrategy:
 
         for t in top:
 
-            if self.already_sent_recent(t["symbol"], "TOP"):
+            symbol = t["symbol"]
+            direction = t["direction"]
+            price = t["price"]
+            score = t["score"]
+
+            if self.already_sent_recent(symbol, direction):
                 continue
 
-            send_alert(f"""
-🔥 TOP TRADE (5M+15M) 🔥
+            message = f"""
+🔥 TOP TRADE 🔥
+{symbol} → {direction}
+₹{round(price,2)}
+⭐ Score: {score}
+"""
 
-{t['symbol']}
+            send_alert(message)
 
-💰 Entry: ₹{round(t['price'],2)}
-🛑 SL: ₹{round(t['sl'],2)}
-🎯 Target: ₹{round(t['target'],2)}
-
-⭐ Score: {t['score']}
-""")
-
-            self.signal_history[f"{t['symbol']}_TOP"] = time.time()
+            self.signal_history[f"{symbol}_{direction}"] = time.time()
+            self.last_direction[symbol] = direction
 
         self.candidates.clear()
         self.last_rank_sent = time.time()
