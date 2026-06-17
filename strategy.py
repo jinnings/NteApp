@@ -1,6 +1,7 @@
 from collections import defaultdict, deque
 import time
-from alerts import send_alert
+import pandas as pd
+import os
 
 
 class MultiSignalStrategy:
@@ -11,7 +12,6 @@ class MultiSignalStrategy:
         self.volume_history = defaultdict(lambda: deque(maxlen=20))
 
         self.signal_history = {}
-        self.last_direction = {}
 
         self.SIGNAL_COOLDOWN = 900
 
@@ -22,8 +22,36 @@ class MultiSignalStrategy:
         self.active_trades = {}
         self.completed_trades = set()
 
+        self.file = "trade_log.xlsx"
+
     # =========================
-    # BASIC HELPERS
+    # ✅ LOGGING FUNCTION
+    # =========================
+
+    def log_to_excel(self, symbol, strategy, entry, sl=0, target=0, status="ENTRY"):
+
+        row = {
+            "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "symbol": symbol,
+            "strategy": strategy,
+            "entry": round(entry, 2),
+            "sl": round(sl, 2),
+            "target": round(target, 2),
+            "status": status
+        }
+
+        df_new = pd.DataFrame([row])
+
+        if os.path.exists(self.file):
+            df_old = pd.read_excel(self.file)
+            df = pd.concat([df_old, df_new], ignore_index=True)
+        else:
+            df = df_new
+
+        df.to_excel(self.file, index=False, engine="openpyxl")
+
+    # =========================
+    # HELPERS
     # =========================
 
     def already_sent_recent(self, symbol, tag):
@@ -33,6 +61,13 @@ class MultiSignalStrategy:
     def is_volume_increasing(self, symbol):
         vols = list(self.volume_history[symbol])
         return len(vols) >= 3 and vols[-1] > vols[-2] > vols[-3]
+
+    def volume_spike(self, symbol):
+        vols = list(self.volume_history[symbol])
+        if len(vols) < 5:
+            return False
+        avg = sum(vols[:-1]) / (len(vols) - 1)
+        return vols[-1] > avg * 1.5
 
     # =========================
     # ✅ CANDLE PATTERNS
@@ -50,43 +85,32 @@ class MultiSignalStrategy:
         wick = abs(prices[-2] - prices[-3])
         return wick > body * 1.5 and prices[-1] > prices[-2]
 
-    def strong_reversal(self, prices):
-        if len(prices) < 4:
-            return False
-        return (prices[-1] - prices[-2]) > abs(prices[-2] - prices[-3])
-
     def candle_pattern_confirm(self, prices):
-        return (
-            self.bullish_engulfing(prices) or
-            self.hammer_pattern(prices) or
-            self.strong_reversal(prices)
-        )
+        return self.bullish_engulfing(prices) or self.hammer_pattern(prices)
 
     # =========================
     # ✅ REVERSAL STRATEGY
     # =========================
 
-    def volume_spike(self, symbol):
-        vols = list(self.volume_history[symbol])
-        if len(vols) < 5:
-            return False
-        avg = sum(vols[:-1]) / (len(vols)-1)
-        return vols[-1] > avg * 1.5
-
     def pullback_reversal(self, symbol, prices):
+
         if len(prices) < 12:
             return False
+
         if not prices[-5] > prices[-10]:
             return False
+
         if not prices[-2] < prices[-3]:
             return False
+
         if not self.candle_pattern_confirm(prices):
             return False
+
         if not self.volume_spike(symbol):
             return False
+
         return True
 
-    # ✅ SL + Target
     def get_reversal_sl_target(self, prices):
 
         swing_low = min(prices[-5:])
@@ -98,7 +122,10 @@ class MultiSignalStrategy:
 
         return entry, sl, target
 
+    # =========================
     # ✅ EXIT TRACKING
+    # =========================
+
     def track_reversal_exit(self, symbol, price):
 
         if symbol not in self.active_trades:
@@ -107,27 +134,23 @@ class MultiSignalStrategy:
         trade = self.active_trades[symbol]
 
         if price >= trade["target"]:
-            send_alert(f"""
-✅ TARGET HIT ✅
 
-{symbol}
-🎯 ₹{round(trade['target'],2)}
-""")
+            self.log_to_excel(symbol, "REVERSAL",
+                              trade["entry"], trade["sl"], trade["target"], "TARGET HIT")
+
             self.completed_trades.add(symbol)
             del self.active_trades[symbol]
 
         elif price <= trade["sl"]:
-            send_alert(f"""
-❌ STOPLOSS HIT ❌
 
-{symbol}
-🛑 ₹{round(trade['sl'],2)}
-""")
+            self.log_to_excel(symbol, "REVERSAL",
+                              trade["entry"], trade["sl"], trade["target"], "SL HIT")
+
             self.completed_trades.add(symbol)
             del self.active_trades[symbol]
 
     # =========================
-    # ✅ MAIN UPDATE
+    # ✅ MAIN LOGIC
     # =========================
 
     def update(self, symbol, price, volume):
@@ -145,29 +168,21 @@ class MultiSignalStrategy:
         if len(prices) < 20:
             return
 
-        # ✅ RESET logic
-        if symbol in self.completed_trades:
-            if prices[-1] > prices[-5]:
-                self.completed_trades.remove(symbol)
+        # ✅ reset
+        if symbol in self.completed_trades and prices[-1] > prices[-5]:
+            self.completed_trades.remove(symbol)
 
         # =========================
-        # ✅ REVERSAL PULLBACK
+        # ✅ REVERSAL ENTRY
         # =========================
+
         if self.pullback_reversal(symbol, prices):
 
             if symbol not in self.active_trades and symbol not in self.completed_trades:
 
                 entry, sl, target = self.get_reversal_sl_target(prices)
 
-                send_alert(f"""
-📉 REVERSAL PULLBACK BUY 📈
-
-{symbol}
-
-💰 Entry: ₹{round(entry,2)}
-🛑 SL: ₹{round(sl,2)}
-🎯 Target: ₹{round(target,2)}
-""")
+                self.log_to_excel(symbol, "REVERSAL", entry, sl, target)
 
                 self.active_trades[symbol] = {
                     "entry": entry,
@@ -176,7 +191,7 @@ class MultiSignalStrategy:
                 }
 
         # =========================
-        # ✅ MOMENTUM (instant/top)
+        # ✅ MOMENTUM
         # =========================
 
         m1 = prices[-1] - prices[-3]
@@ -192,19 +207,12 @@ class MultiSignalStrategy:
         # ✅ INSTANT
         if score >= 22 and not self.already_sent_recent(symbol, direction):
 
-            send_alert(f"""
-🔥 INSTANT TRADE 🔥
-
-{symbol} → {direction}
-₹{round(price,2)}
-
-⭐ Score: {score}
-""")
+            self.log_to_excel(symbol, "INSTANT", price)
 
             self.signal_history[f"{symbol}_{direction}"] = time.time()
             return
 
-        # ✅ STORE
+        # ✅ STORE TOP
         if score > 18:
             self.candidates.append({
                 "symbol": symbol,
@@ -214,7 +222,7 @@ class MultiSignalStrategy:
             })
 
     # =========================
-    # ✅ TOP TRADE WITH PATTERN
+    # ✅ TOP TRADES
     # =========================
 
     def confirm_5m(self, prices, direction):
@@ -243,28 +251,16 @@ class MultiSignalStrategy:
 
             prices = list(self.price_history[symbol])
 
-            # ✅ 5M CONFIRM
             if not self.confirm_5m(prices, direction):
                 continue
 
-            # ✅ CANDLE PATTERN
             if not self.candle_pattern_confirm(prices):
                 continue
 
             if self.already_sent_recent(symbol, direction):
                 continue
 
-            send_alert(f"""
-✅ CONFIRMED TOP TRADE ✅
-
-{symbol} → {direction}
-₹{round(price,2)}
-
-⭐ Score: {score}
-
-✅ 5M Confirmed
-✅ Candle Pattern ✅🔥
-""")
+            self.log_to_excel(symbol, "TOP", price)
 
             self.signal_history[f"{symbol}_{direction}"] = time.time()
 
