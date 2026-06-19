@@ -130,5 +130,15 @@ MAPPING = {
     # =======================
     # ✅ SPECIAL
     # =======================
-    "NSE_EQ:NETWEB": "NSE_EQ|INE0NT901020"
+    "NSE_EQ:NETWEB": "NSE_EQ|INE0NT901020",
+    # =======================
+    # ✅ ADDITIONAL STOCKS
+    # =======================
+    "NSE_EQ:NIACL": "NSE_EQ|INE470Y01017",
+    "NSE_EQ:CARBORUNIV": "NSE_EQ|INE120A01034",
+    "NSE_EQ:SASKEN": "NSE_EQ|INE231F01020",
+    "NSE_EQ:PANAMAPET": "NSE_EQ|INE305C01029",
+    "NSE_EQ:NACLIND": "NSE_EQ|INE295D01020",
+    "NSE_EQ:TARIL": "NSE_EQ|INE435A01028",
+    "NSE_EQ:VINDYATEL": "NSE_EQ|INE707A01012"
 }
