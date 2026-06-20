@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Trading Alerts</title>
+
+    <style>
+        body {
+            font-family: Arial;
+            background: #111;
+            color: #fff;
+            padding: 20px;
+        }
+
+        .alert {
+            background: #1e1e1e;
+            margin: 10px 0;
+            padding: 15px;
+            border-left: 5px solid #00ffcc;
+        }
+
+        .time {
+            color: #888;
+            font-size: 12px;
+        }
+    </style>
+</head>
+
+<body>
+
+<h1>🚀 Live Trading Alerts</h1>
+
+<div id="alerts"></div>
+
+<script>
+async function loadAlerts() {
+    const res = await fetch("http://127.0.0.1:8000/alerts");
+    const data = await res.json();
+
+    const container = document.getElementById("alerts");
+    container.innerHTML = "";
+
+    data.reverse().forEach(a => {
+        const div = document.createElement("div");
+        div.className = "alert";
+
+        div.innerHTML = `
+            <div class="time">${a.time}</div>
+            <pre>${a.message}</pre>
+        `;
+
+        container.appendChild(div);
+    });
+}
+
+// refresh every 3 sec
+setInterval(loadAlerts, 3000);
+loadAlerts();
+</script>
+
+</body>
+</html>
