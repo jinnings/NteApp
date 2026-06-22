@@ -3,6 +3,9 @@ import time
 from alerts import send_alert
 
 
+# =========================
+# ✅ ORIGINAL STRATEGY
+# =========================
 class MultiSignalStrategy:
     def __init__(self):
 
@@ -22,7 +25,6 @@ class MultiSignalStrategy:
         self.candidates = []
         self.last_rank_sent = 0
 
-    # ✅ duplicate block
     def already_sent_recent(self, symbol, direction):
         key = f"{symbol}_{direction}"
         return key in self.signal_history and time.time() - self.signal_history[key] < self.SIGNAL_COOLDOWN
@@ -71,7 +73,6 @@ class MultiSignalStrategy:
         score += 8 if price > vwap else 4
         return int(score)
 
-    # ✅ MAIN LOGIC
     def update(self, symbol, price, volume):
 
         if not symbol or price is None or volume < 8000:
@@ -86,7 +87,6 @@ class MultiSignalStrategy:
 
         vwap = sum(prices) / len(prices)
 
-        # ✅ trend
         m1 = prices[-1] - prices[-3]
         m5 = prices[-1] - prices[-10]
 
@@ -98,7 +98,6 @@ class MultiSignalStrategy:
 
         direction = dir1
 
-        # ✅ filters
         if not self.vwap_trend(price, vwap, direction):
             return
 
@@ -127,7 +126,7 @@ class MultiSignalStrategy:
 
         score = self.calculate_score(price, vwap, day_change, m5)
 
-        # ✅ 🚀 INSTANT SIGNAL (FAST ENTRY)
+        # ✅ INSTANT SIGNAL
         if score >= 22:
 
             message = f"""
@@ -143,7 +142,7 @@ class MultiSignalStrategy:
             self.last_direction[symbol] = direction
             return
 
-        # ✅ NORMAL STORE FOR RANKING
+        # ✅ STORE FOR RANKING
         if score >= 15:
             self.candidates.append({
                 "symbol": symbol,
@@ -152,7 +151,6 @@ class MultiSignalStrategy:
                 "score": score
             })
 
-    # ✅ SEND TOP TRADES
     def process_top_signals(self):
 
         if time.time() - self.last_rank_sent < 60:
@@ -187,3 +185,71 @@ class MultiSignalStrategy:
 
         self.candidates.clear()
         self.last_rank_sent = time.time()
+
+
+# =========================
+# ✅ NEW STRATEGY (SEPARATE)
+# =========================
+class JinningEffectStrategy:
+    def __init__(self):
+        self.close_history = defaultdict(lambda: deque(maxlen=150))
+        self.volume_history = defaultdict(lambda: deque(maxlen=10))
+
+        self.signal_history = {}
+        self.SIGNAL_COOLDOWN = 1800  # 30 min
+
+    def already_sent_recent(self, symbol):
+        return symbol in self.signal_history and time.time() - self.signal_history[symbol] < self.SIGNAL_COOLDOWN
+
+    def update_daily(self, symbol, close_price, volume):
+
+        if not symbol or close_price is None or volume is None:
+            return
+
+        self.close_history[symbol].append(close_price)
+        self.volume_history[symbol].append(volume)
+
+        closes = list(self.close_history[symbol])
+        volumes = list(self.volume_history[symbol])
+
+        # Need enough history
+        if len(closes) < 130:
+            return
+
+        # ✅ CONDITION 1 (Breakout)
+        recent_5_max = max(closes[-5:])
+        past_120_max = max(closes[-126:-6])
+
+        if recent_5_max <= past_120_max * 1.05:
+            return
+
+        # ✅ CONDITION 2 (Volume surge)
+        if len(volumes) < 6:
+            return
+
+        avg_5_volume = sum(volumes[-6:-1]) / 5
+        current_volume = volumes[-1]
+
+        if current_volume <= avg_5_volume:
+            return
+
+        # ✅ CONDITION 3 (Close > previous)
+        if closes[-1] <= closes[-2]:
+            return
+
+        if self.already_sent_recent(symbol):
+            return
+
+        # ✅ SIGNAL
+        message = f"""
+🔥 JINNING EFFECT 🔥
+{symbol} → BUY
+₹{round(close_price, 2)}
+
+✅ 5-Day Breakout > 120D + 5%
+✅ Volume > 5D Avg
+✅ Strong Closing
+"""
+
+        send_alert(message)
+        self.signal_history[symbol] = time.time()
