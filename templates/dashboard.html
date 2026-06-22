@@ -41,32 +41,22 @@
             white-space: pre-wrap;
         }
 
+        /* ✅ BUY */
         .buy {
             background: linear-gradient(135deg, #065f46, #22c55e);
             color: #ecfdf5;
         }
 
+        /* ✅ SELL */
         .sell {
             background: linear-gradient(135deg, #7f1d1d, #ef4444);
             color: #fef2f2;
         }
 
+        /* ✅ DEFAULT */
         .neutral {
             background: #1e293b;
         }
-
-        .count-box {
-            text-align: right;
-            font-size: 12px;
-            padding: 6px 10px;
-            border-radius: 8px;
-            background: rgba(0,0,0,0.3);
-            min-width: 70px;
-        }
-
-        .buy-text { color: #22c55e; }
-        .sell-text { color: #ef4444; }
-
     </style>
 </head>
 
@@ -79,15 +69,10 @@
 </div>
 
 <script>
-
-// ✅ Load stored counts
-let stockCounts = JSON.parse(localStorage.getItem("stockCounts")) || {};
-let lastResetDate = localStorage.getItem("lastResetDate");
-
-// ✅ Convert time
 function convertToIST(utcTime) {
     const date = new Date(utcTime + " UTC");
 
+    // ✅ Split date and time
     const formatted = date.toLocaleString("en-IN", {
         timeZone: "Asia/Kolkata",
         day: "2-digit",
@@ -97,6 +82,7 @@ function convertToIST(utcTime) {
         second: "2-digit"
     });
 
+    // Example: "22 Jun, 04:35:10 PM"
     const parts = formatted.split(", ");
 
     return `
@@ -104,28 +90,7 @@ function convertToIST(utcTime) {
     `;
 }
 
-// ✅ DAILY RESET (IST)
-function checkDailyReset() {
-
-    let now = new Date();
-
-    // IST date
-    let today = now.toLocaleDateString("en-IN", {
-        timeZone: "Asia/Kolkata"
-    });
-
-    if (lastResetDate !== today) {
-        stockCounts = {};
-        localStorage.setItem("stockCounts", JSON.stringify(stockCounts));
-        localStorage.setItem("lastResetDate", today);
-    }
-}
-
 function loadAlerts() {
-
-    // ✅ reset if needed
-    checkDailyReset();
-
     fetch("/api/alerts")
         .then(res => res.json())
         .then(data => {
@@ -139,46 +104,13 @@ function loadAlerts() {
                 if (alert.message.includes("BUY")) cls = "buy";
                 else if (alert.message.includes("SELL")) cls = "sell";
 
-                // ✅ Extract stock (FIRST WORD)
-                let match = alert.message.match(/^[A-Z]+/);
-                let stock = match ? match[0] : "UNKNOWN";
-
-                // ✅ init
-                if (!stockCounts[stock]) {
-                    stockCounts[stock] = { buy: 0, sell: 0 };
-                }
-
-                // ✅ increment
-                if (alert.message.includes("BUY")) {
-                    stockCounts[stock].buy++;
-                } 
-                else if (alert.message.includes("SELL")) {
-                    stockCounts[stock].sell++;
-                }
-
-                let counts = stockCounts[stock];
-
                 html += `
                     <div class="card ${cls}">
-                        <div style="display:flex; justify-content:space-between; align-items:center;">
-                            
-                            <div>
-                                <div class="time">${convertToIST(alert.time)}</div>
-                                <div class="message">${alert.message}</div>
-                            </div>
-
-                            <div class="count-box">
-                                <div class="buy-text">BUY: ${counts.buy}</div>
-                                <div class="sell-text">SELL: ${counts.sell}</div>
-                            </div>
-
-                        </div>
+                        <div class="time">${convertToIST(alert.time)}</div>
+                        <div class="message">${alert.message}</div>
                     </div>
                 `;
             });
-
-            // ✅ SAVE updated counts
-            localStorage.setItem("stockCounts", JSON.stringify(stockCounts));
 
             document.getElementById("alerts-container").innerHTML = html;
         })
@@ -188,9 +120,8 @@ function loadAlerts() {
 // ✅ initial load
 loadAlerts();
 
-// ✅ auto refresh
+// ✅ auto refresh every 5 sec
 setInterval(loadAlerts, 5000);
-
 </script>
 
 </body>
