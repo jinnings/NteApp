@@ -29,7 +29,11 @@
         .time {
             font-size: 12px;
             margin-bottom: 5px;
-            opacity: 0.8;
+            opacity: 0.85;
+        }
+
+        .time-bold {
+            font-weight: bold;
         }
 
         .message {
@@ -65,8 +69,29 @@
 </div>
 
 <script>
+function convertToIST(utcTime) {
+    const date = new Date(utcTime + " UTC");
+
+    // ✅ Split date and time
+    const formatted = date.toLocaleString("en-IN", {
+        timeZone: "Asia/Kolkata",
+        day: "2-digit",
+        month: "short",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit"
+    });
+
+    // Example: "22 Jun, 04:35:10 PM"
+    const parts = formatted.split(", ");
+
+    return `
+        ${parts[0]}, <span class="time-bold">${parts[1]}</span>
+    `;
+}
+
 function loadAlerts() {
-    fetch("/api/alerts")   // ✅ matches Flask route
+    fetch("/api/alerts")
         .then(res => res.json())
         .then(data => {
 
@@ -81,7 +106,7 @@ function loadAlerts() {
 
                 html += `
                     <div class="card ${cls}">
-                        <div class="time">${alert.time}</div>
+                        <div class="time">${convertToIST(alert.time)}</div>
                         <div class="message">${alert.message}</div>
                     </div>
                 `;
@@ -95,7 +120,7 @@ function loadAlerts() {
 // ✅ initial load
 loadAlerts();
 
-// ✅ auto refresh every 5 sec (no page reload)
+// ✅ auto refresh every 5 sec
 setInterval(loadAlerts, 5000);
 </script>
 
