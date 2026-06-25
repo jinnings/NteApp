@@ -183,7 +183,56 @@ MAPPING = {
     "NSE_EQ:VIJIFIN": "NSE_EQ|INE159N01027",      # Viji Finance Limited
     "NSE_EQ:DENORA": "NSE_EQ|INE244A01016",       # De Nora India Limited
     "NSE_EQ:SPECIALITY": "NSE_EQ|INE247M01014",   # Speciality Restaurants Limited
-    "NSE_EQ:GREAVESCOT": "NSE_EQ|INE224A01026"    # Greaves Cotton Limited (already exists)
+    "NSE_EQ:GREAVESCOT": "NSE_EQ|INE224A01026",    # Greaves Cotton Limited (already exists)
+    # =======================
+    # ✅ MORE USER ADDITIONS
+    # =======================
+
+    "NSE_EQ:PSPPROJECT": "NSE_EQ|INE488V01015",    # PSP Projects Ltd
+    "NSE_EQ:MTEDUCARE": "NSE_EQ|INE472M01018",     # MT Educare Limited
+    "NSE_EQ:TALBROAUTO": "NSE_EQ|INE187D01029",    # Talbros Automotive Components Limited
+    "NSE_EQ:HONAUT": "NSE_EQ|INE671A01010",        # Honeywell Automation India Limited
+    "NSE_EQ:CORONA": "NSE_EQ|INE0A5N01016",        # Corona Remedies Ltd
+    "NSE_EQ:GLOBALHEALTH": "NSE_EQ|INE474Q01029",  # Global Health Ltd (already exists)
+    "NSE_EQ:CAPLIPOINT": "NSE_EQ|INE475E01026",    # Caplin Point Laboratories Limited
+    "NSE_EQ:ONELIFECAP": "NSE_EQ|INE912L01015",    # Onelife Capital Advisors Limited
+    "NSE_EQ:EVEREADY": "NSE_EQ|INE128A01029",      # Eveready Industries India Limited
+
+    "NSE_EQ:KPRMILL": "NSE_EQ|INE930H01031",       # K.P.R. Mill Limited (already exists)
+    "NSE_EQ:PINELABS": "NSE_EQ|INE0F4S01012",      # Pine Labs Ltd
+    "NSE_EQ:JSWINFRA": "NSE_EQ|INE880J01026",      # JSW Infrastructure Ltd (already exists)
+    "NSE_EQ:M&MFIN": "NSE_EQ|INE774D01024",        # Mahindra & Mahindra Financial Services Ltd
+    "NSE_EQ:CREDITACC": "NSE_EQ|INE741K01010",     # CreditAccess Grameen Ltd
+    "NSE_EQ:OFSS": "NSE_EQ|INE881D01027",          # Oracle Financial Services Software Ltd
+    "NSE_EQ:EXIDEIND": "NSE_EQ|INE302A01020",      # Exide Industries Limited
+    "NSE_EQ:JYOTICNC": "NSE_EQ|INE980O01024",      # Jyoti CNC Automation Ltd
+    "NSE_EQ:WELSPUNLIV": "NSE_EQ|INE192B01031",    # Welspun Living Ltd (already exists)
+    "NSE_EQ:INDIGO": "NSE_EQ|INE646L01027",        # Interglobe Aviation Limited
+    "NSE_EQ:BRAINBEES": "NSE_EQ|INE02RE01045",     # Brainbees Solutions Ltd
+    "NSE_EQ:RAMCOCEM": "NSE_EQ|INE331A01037",      # The Ramco Cements Limited
+    "NSE_EQ:TRIDENT": "NSE_EQ|INE064C01022",       # Trident Limited
+    "NSE_EQ:SHREECEM": "NSE_EQ|INE070A01015",      # Shree Cements Limited
+    "NSE_EQ:CHOLAHLDNG": "NSE_EQ|INE149A01033",    # Cholamandalam Financial Holdings Ltd
+    "NSE_EQ:HINDPETRO": "NSE_EQ|INE094A01015",     # Hindustan Petroleum Corporation Ltd
+    "NSE_EQ:AUBANK": "NSE_EQ|INE949L01017",        # AU Small Finance Bank Ltd
+    "NSE_EQ:CHOLAFIN": "NSE_EQ|INE121A01024",      # Cholamandalam Investment and Finance Company Ltd
+    "NSE_EQ:BRIGADE": "NSE_EQ|INE791I01019",       # Brigade Enterprises Limited
+    "NSE_EQ:SYRMA": "NSE_EQ|INE0DYJ01015",         # Syrma SGS Technology Ltd
+    "NSE_EQ:HIMADRI": "NSE_EQ|INE019C01026",       # Himadri Speciality Chemical Limited
+    "NSE_EQ:ADANIENT": "NSE_EQ|INE423A01024",      # Adani Enterprises Limited
+    "NSE_EQ:LTF": "NSE_EQ|INE498L01015",           # L&T Finance Ltd
+    "NSE_EQ:HOMEFIRST": "NSE_EQ|INE481N01025",     # Home First Finance Company India Ltd
+    "NSE_EQ:ABFRL": "NSE_EQ|INE647O01011",         # Aditya Birla Fashion and Retail Limited
+    "NSE_EQ:TRENT": "NSE_EQ|INE849A01020",         # Trent Limited
+    "NSE_EQ:ABLBL": "NSE_EQ|INE0R0401010",         # Aditya Birla Lifestyle Brands Ltd
+    "NSE_EQ:PHOENIXLTD": "NSE_EQ|INE211B01039",    # The Phoenix Mills Limited
+    "NSE_EQ:TECHM": "NSE_EQ|INE669C01036",         # Tech Mahindra Limited
+    "NSE_EQ:JSWCEMENT": "NSE_EQ|INE0PWA01018",     # JSW Cement Ltd
+    "NSE_EQ:CUB": "NSE_EQ|INE491A01021",           # City Union Bank Limited
+    "NSE_EQ:DALBHARAT": "NSE_EQ|INE00R701025",     # Dalmia Bharat Limited
+    "NSE_EQ:NETWEB": "NSE_EQ|INE0NT901020",        # Netweb Technologies India Ltd
+    "NSE_EQ:LODHA": "NSE_EQ|INE670K01029",         # Lodha Developers Ltd
+    "NSE_EQ:BAJFINANCE": "NSE_EQ|INE296A01032"     # Bajaj Finance Limited
 
 
 }
