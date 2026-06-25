@@ -155,7 +155,35 @@ MAPPING = {
     "NSE_EQ:CUPID": "NSE_EQ|INE509F01011",       # Cupid Limited
     "NSE_EQ:SONACOMS": "NSE_EQ|INE073K01018",    # Sona BLW Precision Forgings Ltd (already exists, safe reuse)
     "NSE_EQ:MANAPPURAM": "NSE_EQ|INE522D01027",  # Manappuram Finance Limited
-    "NSE_EQ:CASTROLIND": "NSE_EQ|INE172A01027"  # Castrol India Limited
+    "NSE_EQ:CASTROLIND": "NSE_EQ|INE172A01027",  # Castrol India Limited
+    # =======================
+    # ✅ USER ADDITIONS
+    # =======================
+
+    "NSE_EQ:RAMCOSYS": "NSE_EQ|INE246B01019",     # Ramco Systems Limited
+    "NSE_EQ:SPAL": "NSE_EQ|INE212I01016",         # S. P. Apparels Limited
+    "NSE_EQ:QUADFUTURE": "NSE_EQ|INE0QJW01018",   # Quadrant Future Tek Ltd
+    "NSE_EQ:ICIL": "NSE_EQ|INE483B01026",         # Indo Count Industries Limited
+    "NSE_EQ:PGIL": "NSE_EQ|INE940H01022",         # Pearl Global Industries Limited
+    "NSE_EQ:GINNIFILA": "NSE_EQ|INE424C01010",    # Ginni Filaments Limited
+    "NSE_EQ:AETHER": "NSE_EQ|INE0BWX01014",       # Aether Industries Ltd
+    "NSE_EQ:STEELTECH": "NSE_EQ|INE0JWB01015",    # Standard Engineering Technology Ltd (already exists)
+    "NSE_EQ:SKMEGGPROD": "NSE_EQ|INE411D01011",   # SKM Egg Products Export (India) Limited
+    "NSE_EQ:PATELENG": "NSE_EQ|INE244B01030",     # Patel Engineering Limited
+    "NSE_EQ:KPRMILL": "NSE_EQ|INE930H01031",      # K.P.R. Mill Limited
+    "NSE_EQ:JSWINFRA": "NSE_EQ|INE880J01026",     # JSW Infrastructure Ltd
+    "NSE_EQ:POLYPLEX": "NSE_EQ|INE633B01018",     # Polyplex Corporation Limited
+    "NSE_EQ:ARVIND": "NSE_EQ|INE034A01011",       # Arvind Limited
+    "NSE_EQ:SANSTAR": "NSE_EQ|INE08NE01015",      # Sanstar Ltd (already exists)
+    "NSE_EQ:KAPSTON": "NSE_EQ|INE542Z01010",      # Kapston Services Ltd
+    "NSE_EQ:WELSPUNLIV": "NSE_EQ|INE192B01031",   # Welspun Living Ltd
+    "NSE_EQ:KDDL": "NSE_EQ|INE291D01011",         # KDDL Limited
+    "NSE_EQ:PATINTLOG": "NSE_EQ|INE529D01014",    # Patel Integrated Logistics Limited
+    "NSE_EQ:UNITEDFOOD": "NSE_EQ|INE346F01017",   # United Foodbrands Ltd
+    "NSE_EQ:VIJIFIN": "NSE_EQ|INE159N01027",      # Viji Finance Limited
+    "NSE_EQ:DENORA": "NSE_EQ|INE244A01016",       # De Nora India Limited
+    "NSE_EQ:SPECIALITY": "NSE_EQ|INE247M01014",   # Speciality Restaurants Limited
+    "NSE_EQ:GREAVESCOT": "NSE_EQ|INE224A01026"    # Greaves Cotton Limited (already exists)
 
 
 }
