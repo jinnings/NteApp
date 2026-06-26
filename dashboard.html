@@ -29,8 +29,8 @@
             font-weight: bold;
         }
 
-        .buy { background: #22c55e; }
-        .sell { background: #ef4444; }
+        .buy { background: linear-gradient(135deg, #065f46, #22c55e); }
+        .sell { background: linear-gradient(135deg, #7f1d1d, #ef4444); }
         .neutral { background: #1e293b; }
     </style>
 </head>
@@ -38,6 +38,7 @@
 <body>
 
 <h1>📊 Trading Alerts</h1>
+
 <div id="alerts-container">Loading...</div>
 
 <script>
@@ -67,6 +68,7 @@ function loadAlerts() {
             data.slice(0, 50).forEach(alert => {
 
                 let cls = "neutral";
+
                 if (alert.message.includes("BUY")) cls = "buy";
                 else if (alert.message.includes("SELL")) cls = "sell";
 
