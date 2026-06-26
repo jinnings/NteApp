@@ -1,97 +1,99 @@
-from collections import defaultdict, deque
+import requests
 import time
-from alerts import send_alert
+import json
+from config import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
+
+LOG_FILE = "alerts_log.json"
+COOLDOWN_SECONDS = 300  # 5 minutes
 
 
-class MultiSignalStrategy:
-    def __init__(self):
-        self.price_history = defaultdict(lambda: deque(maxlen=100))
-        self.volume_history = defaultdict(lambda: deque(maxlen=20))
+def save_alert(message, symbol=None, direction=None, entry=None, sl=None, target=None, strategy_name=None):
 
-        self.last_direction = {}
-        self.signal_history = {}
+    current_time = time.time()
 
-        self.SIGNAL_COOLDOWN = 900
+    try:
+        try:
+            with open(LOG_FILE, "r") as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, FileNotFoundError):
+            data = []
 
-        self.day_open = {}
-        self.candidates = []
-        self.last_rank_sent = 0
+        # ✅ SYSTEM ALERT
+        if symbol is None:
+            alert = {
+                "time": time.strftime('%Y-%m-%d %H:%M:%S'),
+                "message": message.strip(),
+                "status": "INFO"
+            }
 
-    # ✅ REAL VWAP
-    def calculate_vwap(self, prices, volumes):
-        total_vol = sum(volumes)
-        if total_vol == 0:
-            return prices[-1]
-        return sum(p * v for p, v in zip(prices, volumes)) / total_vol
+            data.append(alert)
+            data = data[-200:]
 
-    def get_trade_levels(self, price, direction, prices):
-        recent = prices[-10:]
+            with open(LOG_FILE, "w") as f:
+                json.dump(data, f, indent=2)
 
-        if direction == "BUY":
-            stoploss = min(recent[:-1])
-            risk = max(price - stoploss, price * 0.003)
-            target = price + (risk * 2)
-        else:
-            stoploss = max(recent[:-1])
-            risk = max(stoploss - price, price * 0.003)
-            target = price - (risk * 2)
-
-        return round(stoploss, 2), round(target, 2)
-
-    def already_sent_recent(self, symbol, direction):
-        key = f"{symbol}_{direction}"
-        return key in self.signal_history and time.time() - self.signal_history[key] < self.SIGNAL_COOLDOWN
-
-    def is_volume_increasing(self, symbol):
-        vols = list(self.volume_history[symbol])
-        return len(vols) >= 3 and vols[-1] > vols[-2] > vols[-3]
-
-    def confirm_candle(self, prices, direction):
-        if len(prices) < 5:
-            return False
-        return prices[-1] > prices[-2] > prices[-3] if direction == "BUY" else prices[-1] < prices[-2] < prices[-3]
-
-    def is_pullback(self, prices, direction):
-        if len(prices) < 6:
-            return False
-        return prices[-5] > prices[-3] if direction == "BUY" else prices[-5] < prices[-3]
-
-    def is_breakout(self, prices, direction):
-        if len(prices) < 10:
-            return False
-        return prices[-1] > max(prices[-10:-1]) if direction == "BUY" else prices[-1] < min(prices[-10:-1])
-
-    def update(self, symbol, price, volume):
-        if not symbol or price is None or volume < 8000:
             return
 
-        self.price_history[symbol].append(price)
-        self.volume_history[symbol].append(volume)
+        # ✅ CHECK EXISTING TRADES
+        for existing in data:
 
-        prices = list(self.price_history[symbol])
-        volumes = list(self.volume_history[symbol])
+            if existing.get("symbol") != symbol:
+                continue
 
-        if len(prices) < 20:
-            return
+            if existing.get("strategy") != strategy_name:
+                continue
 
-        vwap = self.calculate_vwap(prices, volumes)
+            status = existing.get("status")
+            alert_time = existing.get("timestamp", 0)
 
-        m1 = prices[-1] - prices[-3]
-        m5 = prices[-1] - prices[-10]
+            # ❌ Block active trade
+            if status == "OPEN":
+                print(f"⛔ Skip {symbol} ({strategy_name}) → active trade exists")
+                return
 
-        direction = "BUY" if m1 > 0 else "SELL"
+            # ❌ Block cooldown
+            if current_time - alert_time < COOLDOWN_SECONDS:
+                print(f"⏳ Cooldown active for {symbol} ({strategy_name})")
+                return
 
-        if (m1 > 0) != (m5 > 0):
-            return
+        # ✅ ALLOW NEW TRADE
+        alert = {
+            "time": time.strftime('%Y-%m-%d %H:%M:%S'),
+            "timestamp": current_time,
+            "message": message.strip(),
+            "symbol": symbol,
+            "direction": direction,
+            "entry": entry,
+            "sl": sl,
+            "target": target,
+            "strategy": strategy_name,
+            "status": "OPEN"
+        }
 
-        if direction == "BUY" and price < vwap:
-            return
-        if direction == "SELL" and price > vwap:
-            return
+        data.append(alert)
+        data = data[-200:]
 
-        if not self.is_pullback(prices, direction):
-            return
-        if not self.is_breakout(prices, direction):
-            return
-        if not self.is_volume_increasing(symbol):
-            return
+        with open(LOG_FILE, "w") as f:
+            json.dump(data, f, indent=2)
+
+    except Exception as e:
+        print("Log error:", e)
+
+
+def send_alert(message, symbol=None, direction=None, entry=None, sl=None, target=None, strategy_name=None):
+    print("\nALERT:\n", message)
+
+    save_alert(message, symbol, direction, entry, sl, target, strategy_name)
+
+    # ✅ Telegram (optional)
+    if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+
+        try:
+            requests.post(url, data={
+                "chat_id": TELEGRAM_CHAT_ID,
+                "text": message
+            })
+        except Exception as e:
+            print("Telegram error:", e)
+``
