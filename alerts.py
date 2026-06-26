@@ -40,4 +40,3 @@ def send_alert(message):
         })
     except Exception as e:
         print("Telegram error:", e)
-``
