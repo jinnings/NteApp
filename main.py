@@ -16,6 +16,14 @@ strategy = MultiSignalStrategy()
 
 app = Flask(__name__, static_folder=".")
 
+# ✅ GLOBAL STATS
+stats = {
+    "scanned": 0,
+    "open_trades": 0,
+    "closed_trades": 0,
+    "pnl": 0
+}
+
 print("🚀 Bot running ✅")
 send_alert("🤖 BOT STARTED ✅")
 
@@ -26,7 +34,7 @@ def home():
     return app.send_static_file("dashboard.html")
 
 
-# ✅ ALERT API
+# ✅ ALERTS API
 @app.route("/api/alerts")
 def get_alerts():
     try:
@@ -37,7 +45,13 @@ def get_alerts():
         return jsonify([])
 
 
-# ✅ ✅ ✅ YOUR ORIGINAL WORKING API (UNCHANGED ✅)
+# ✅ STATS API
+@app.route("/api/stats")
+def get_stats():
+    return jsonify(stats)
+
+
+# ✅ ✅ YOUR ORIGINAL WORKING FETCH (UNCHANGED ✅)
 def get_prices_batch(mapping):
     url = "https://api.upstox.com/v2/market-quote/quotes"
     headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
@@ -75,7 +89,7 @@ def get_prices_batch(mapping):
     return prices
 
 
-# ✅ ✅ ✅ LIVE BOT (OLD LOGIC INSIDE THREAD ✅)
+# ✅ ✅ LIVE BOT
 def run_bot():
     print("📈 LIVE MODE STARTED")
 
@@ -86,10 +100,11 @@ def run_bot():
             for symbol, d in prices.items():
                 strategy.update(symbol, d["price"], d["volume"])
 
-            # ✅ IMPORTANT (same as old)
             strategy.process_top_signals()
 
-            # ✅ SAME OUTPUT YOU WANT ✅
+            # ✅ scan count
+            stats["scanned"] = len(prices)
+
             print(f"📊 Scanned: {len(prices)} stocks")
 
         except Exception:
@@ -98,7 +113,7 @@ def run_bot():
         time.sleep(5)
 
 
-# ✅ ✅ TEST MODE
+# ✅ TEST MODE
 def generate_test_alerts():
     symbols = ["NIFTY", "BANKNIFTY", "RELIANCE", "TCS", "INFY"]
     strategies = ["BREAKOUT", "SCALPING", "REVERSAL"]
@@ -138,7 +153,7 @@ Target: {target}"""
         time.sleep(5)
 
 
-# ✅ STATUS PRICE
+# ✅ PRICE FOR STATUS
 def get_prices_for_status():
     if MODE == "LIVE":
         real = get_prices_batch(MAPPING)
@@ -153,7 +168,7 @@ def get_prices_for_status():
         }
 
 
-# ✅ TRADE STATUS TRACKER
+# ✅ ✅ TRADE STATUS + P&L
 def update_trade_status():
     while True:
         try:
@@ -164,41 +179,67 @@ def update_trade_status():
                 alerts = []
 
             prices = get_prices_for_status()
+
+            open_count = 0
+            closed_count = 0
+            total_pnl = 0
             updated = False
 
             for alert in alerts:
-                if alert.get("status") != "OPEN":
-                    continue
 
                 symbol = alert.get("symbol")
                 direction = alert.get("direction")
-
-                if symbol not in prices:
-                    continue
-
-                current_price = prices[symbol]
+                entry = alert.get("entry")
                 target = alert.get("target")
                 sl = alert.get("sl")
 
-                if direction == "BUY":
-                    if current_price >= target:
-                        alert["status"] = "TARGET HIT ✅"
-                        alert["timestamp"] = time.time()
-                        updated = True
-                    elif current_price <= sl:
-                        alert["status"] = "SL HIT ❌"
-                        alert["timestamp"] = time.time()
-                        updated = True
+                if alert.get("status") == "OPEN":
+                    open_count += 1
 
-                elif direction == "SELL":
-                    if current_price <= target:
-                        alert["status"] = "TARGET HIT ✅"
-                        alert["timestamp"] = time.time()
-                        updated = True
-                    elif current_price >= sl:
-                        alert["status"] = "SL HIT ❌"
-                        alert["timestamp"] = time.time()
-                        updated = True
+                    if symbol not in prices:
+                        continue
+
+                    current_price = prices[symbol]
+
+                    if direction == "BUY":
+                        if current_price >= target:
+                            alert["status"] = "TARGET HIT ✅"
+                            alert["exit"] = target
+                            alert["pnl"] = round(target - entry, 2)
+                            updated = True
+
+                        elif current_price <= sl:
+                            alert["status"] = "SL HIT ❌"
+                            alert["exit"] = sl
+                            alert["pnl"] = round(sl - entry, 2)
+                            updated = True
+
+                    elif direction == "SELL":
+                        if current_price <= target:
+                            alert["status"] = "TARGET HIT ✅"
+                            alert["exit"] = target
+                            alert["pnl"] = round(entry - target, 2)
+                            updated = True
+
+                        elif current_price >= sl:
+                            alert["status"] = "SL HIT ❌"
+                            alert["exit"] = sl
+                            alert["pnl"] = round(entry - sl, 2)
+                            updated = True
+
+                else:
+                    closed_count += 1
+                    total_pnl += alert.get("pnl", 0)
+
+            # ✅ recalc closed trades
+            for a in alerts:
+                if a.get("status") != "OPEN":
+                    closed_count += 1
+                    total_pnl += a.get("pnl", 0)
+
+            stats["open_trades"] = open_count
+            stats["closed_trades"] = closed_count
+            stats["pnl"] = round(total_pnl, 2)
 
             if updated:
                 with open("alerts_log.json", "w") as f:
@@ -210,7 +251,7 @@ def update_trade_status():
         time.sleep(3)
 
 
-# ✅ ✅ START SYSTEM
+# ✅ START SYSTEM
 if __name__ == "__main__":
 
     if MODE == "LIVE":

@@ -19,13 +19,20 @@
 
         .buy { background: #22c55e; }
         .sell { background: #ef4444; }
-        .neutral { background: #64748b; } /* ✅ GREY */
+        .neutral { background: #64748b; }
     </style>
 </head>
 
 <body>
 
 <h1>📊 Trading Alerts</h1>
+
+<!-- ✅ ADD THIS -->
+<h2>📈 Live Stats</h2>
+<div id="stats">Loading...</div>
+
+<hr>
+
 <div id="alerts-container">Loading...</div>
 
 <script>
@@ -49,31 +56,53 @@ function loadAlerts() {
                 let cls = "neutral";
 
                 if (alert.status !== "OPEN") {
-                    cls = "neutral"; // ✅ CLOSED = GREY
+                    cls = "neutral";
                 } else {
                     if (alert.direction === "BUY") cls = "buy";
                     else if (alert.direction === "SELL") cls = "sell";
                 }
 
-              html += `
-    <div class="card ${cls}">
-        <div>${convertToIST(alert.time)}</div>
-        <div><b>${alert.symbol} ${alert.direction}</b></div>
-        <div>Strategy: ${alert.strategy}</div>
-        <div>Entry: ${alert.entry}</div>
-        <div>SL: ${alert.sl}</div>
-        <div>Target: ${alert.target}</div>
-        <div><b>Status: ${alert.status}</b></div>
-    </div>
-`;
+                html += `
+                    <div class="card ${cls}">
+                        <div>${convertToIST(alert.time)}</div>
+                        <div><b>${alert.symbol} ${alert.direction}</b></div>
+                        <div>Strategy: ${alert.strategy}</div>
+                        <div>Entry: ${alert.entry}</div>
+                        <div>SL: ${alert.sl}</div>
+                        <div>Target: ${alert.target}</div>
+                        <div><b>Status: ${alert.status}</b></div>
+                    </div>
+                `;
             });
 
             document.getElementById("alerts-container").innerHTML = html;
         });
 }
 
+
+function loadStats() {
+    fetch("/api/stats")
+        .then(res => res.json())
+        .then(data => {
+            document.getElementById("stats").innerHTML = `
+                <div class="card neutral">
+                    ✅ Scanned: ${data.scanned}<br>
+                    🟢 Open Trades: ${data.open_trades}<br>
+                    ⚪ Closed Trades: ${data.closed_trades}<br>
+                    💰 P&L: ₹${data.pnl}
+                </div>
+            `;
+        });
+}
+
+
+// ✅ RUN BOTH
 loadAlerts();
+loadStats();
+
 setInterval(loadAlerts, 3000);
+setInterval(loadStats, 3000);
+
 </script>
 
 </body>
