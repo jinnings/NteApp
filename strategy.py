@@ -4,7 +4,7 @@ from alerts import send_alert
 
 
 # =========================
-# ✅ ORIGINAL STRATEGY
+# ✅ ORIGINAL STRATEGY (UPDATED WITH SL/TGT)
 # =========================
 class MultiSignalStrategy:
     def __init__(self):
@@ -24,6 +24,34 @@ class MultiSignalStrategy:
         # ✅ ranking storage
         self.candidates = []
         self.last_rank_sent = 0
+
+    # =========================
+    # ✅ NEW: SL & TARGET LOGIC
+    # =========================
+    def get_trade_levels(self, price, direction, prices):
+
+        recent = prices[-10:]
+
+        if direction == "BUY":
+            stoploss = min(recent)
+            risk = price - stoploss
+
+            # minimum SL (avoid too tight SL)
+            risk = max(risk, price * 0.003)
+
+            target = price + (risk * 2)
+
+        else:  # SELL
+            stoploss = max(recent)
+            risk = stoploss - price
+
+            risk = max(risk, price * 0.003)
+
+            target = price - (risk * 2)
+
+        return round(stoploss, 2), round(target, 2)
+
+    # =========================
 
     def already_sent_recent(self, symbol, direction):
         key = f"{symbol}_{direction}"
@@ -129,10 +157,16 @@ class MultiSignalStrategy:
         # ✅ INSTANT SIGNAL
         if score >= 22:
 
+            sl, tgt = self.get_trade_levels(price, direction, prices)
+
             message = f"""
 🔥 INSTANT TRADE 🔥
 {symbol} → {direction}
 ₹{round(price,2)}
+
+🎯 Target: ₹{tgt}
+🛑 Stoploss: ₹{sl}
+
 ⭐ Score: {score}
 """
 
@@ -171,10 +205,17 @@ class MultiSignalStrategy:
             if self.already_sent_recent(symbol, direction):
                 continue
 
+            prices = list(self.price_history[symbol])
+            sl, tgt = self.get_trade_levels(price, direction, prices)
+
             message = f"""
 🔥 TOP TRADE 🔥
 {symbol} → {direction}
 ₹{round(price,2)}
+
+🎯 Target: ₹{tgt}
+🛑 Stoploss: ₹{sl}
+
 ⭐ Score: {score}
 """
 
@@ -188,7 +229,7 @@ class MultiSignalStrategy:
 
 
 # =========================
-# ✅ NEW STRATEGY (SEPARATE)
+# ✅ JINNING EFFECT (UNCHANGED)
 # =========================
 class JinningEffectStrategy:
     def __init__(self):
@@ -196,7 +237,7 @@ class JinningEffectStrategy:
         self.volume_history = defaultdict(lambda: deque(maxlen=10))
 
         self.signal_history = {}
-        self.SIGNAL_COOLDOWN = 1800  # 30 min
+        self.SIGNAL_COOLDOWN = 1800
 
     def already_sent_recent(self, symbol):
         return symbol in self.signal_history and time.time() - self.signal_history[symbol] < self.SIGNAL_COOLDOWN
@@ -212,18 +253,15 @@ class JinningEffectStrategy:
         closes = list(self.close_history[symbol])
         volumes = list(self.volume_history[symbol])
 
-        # Need enough history
         if len(closes) < 130:
             return
 
-        # ✅ CONDITION 1 (Breakout)
         recent_5_max = max(closes[-5:])
         past_120_max = max(closes[-126:-6])
 
         if recent_5_max <= past_120_max * 1.05:
             return
 
-        # ✅ CONDITION 2 (Volume surge)
         if len(volumes) < 6:
             return
 
@@ -233,14 +271,12 @@ class JinningEffectStrategy:
         if current_volume <= avg_5_volume:
             return
 
-        # ✅ CONDITION 3 (Close > previous)
         if closes[-1] <= closes[-2]:
             return
 
         if self.already_sent_recent(symbol):
             return
 
-        # ✅ SIGNAL
         message = f"""
 🔥 JINNING EFFECT 🔥
 {symbol} → BUY
