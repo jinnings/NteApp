@@ -19,55 +19,28 @@
             padding: 15px;
             margin-bottom: 12px;
             border-radius: 10px;
-            transition: transform 0.2s ease;
-        }
-
-        .card:hover {
-            transform: scale(1.02);
         }
 
         .time {
             font-size: 12px;
-            margin-bottom: 5px;
-            opacity: 0.85;
         }
 
         .time-bold {
             font-weight: bold;
         }
 
-        .message {
-            font-size: 14px;
-            white-space: pre-wrap;
-        }
-
-        .buy {
-            background: linear-gradient(135deg, #065f46, #22c55e);
-            color: #ecfdf5;
-        }
-
-        .sell {
-            background: linear-gradient(135deg, #7f1d1d, #ef4444);
-            color: #fef2f2;
-        }
-
-        .neutral {
-            background: #1e293b;
-        }
+        .buy { background: #22c55e; }
+        .sell { background: #ef4444; }
+        .neutral { background: #1e293b; }
     </style>
 </head>
 
 <body>
 
 <h1>📊 Trading Alerts</h1>
-
-<div id="alerts-container">
-    Loading alerts...
-</div>
+<div id="alerts-container">Loading...</div>
 
 <script>
-let lastCount = 0;
-
 function convertToIST(utcTime) {
     const date = new Date(utcTime + " UTC");
 
@@ -81,7 +54,6 @@ function convertToIST(utcTime) {
     });
 
     const parts = formatted.split(", ");
-
     return `${parts[0]}, <span class="time-bold">${parts[1]}</span>`;
 }
 
@@ -92,30 +64,22 @@ function loadAlerts() {
 
             let html = "";
 
-            if (data.length > lastCount) {
-                new Audio("https://www.soundjay.com/buttons/sounds/button-3.mp3").play();
-            }
-
-            lastCount = data.length;
-
             data.slice(0, 50).forEach(alert => {
 
                 let cls = "neutral";
-
                 if (alert.message.includes("BUY")) cls = "buy";
                 else if (alert.message.includes("SELL")) cls = "sell";
 
                 html += `
                     <div class="card ${cls}">
                         <div class="time">${convertToIST(alert.time)}</div>
-                        <div class="message">${alert.message}</div>
+                        <div>${alert.message}</div>
                     </div>
                 `;
             });
 
             document.getElementById("alerts-container").innerHTML = html;
-        })
-        .catch(err => console.error("Error:", err));
+        });
 }
 
 loadAlerts();

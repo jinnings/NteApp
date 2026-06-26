@@ -5,7 +5,6 @@ from config import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
 
 LOG_FILE = "alerts_log.json"
 
-
 def save_alert(message):
     alert = {
         "time": time.strftime('%Y-%m-%d %H:%M:%S'),
@@ -28,10 +27,8 @@ def save_alert(message):
     except Exception as e:
         print("Log error:", e)
 
-
 def send_alert(message):
     print("\nALERT:\n", message)
-
     save_alert(message)
 
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -43,3 +40,4 @@ def send_alert(message):
         })
     except Exception as e:
         print("Telegram error:", e)
+``

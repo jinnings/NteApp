@@ -2,42 +2,40 @@ import requests
 import time
 import json
 import threading
-import os
 
-from flask import Flask, jsonify, send_from_directory
-
+from flask import Flask, jsonify
 from strategy import MultiSignalStrategy
 from mapping import MAPPING
 from config import ACCESS_TOKEN
 from alerts import send_alert
 
-# ✅ Flask setup
-app = Flask(__name__)
+# ✅ VERY IMPORTANT: static_folder="."
+app = Flask(__name__, static_folder=".")
+
 strategy = MultiSignalStrategy()
 
 print("🚀 Bot running ✅")
 send_alert("🤖 BOT STARTED ✅")
 
 
-# ✅ ✅ HOME ROUTE (FIXES YOUR 404 ERROR)
+# ✅ ✅ ✅ ROOT (NO MORE 404)
 @app.route("/")
 def home():
-    return send_from_directory(os.getcwd(), "dashboard.html")
+    return app.send_static_file("dashboard.html")
 
 
-# ✅ API ENDPOINT
+# ✅ API
 @app.route("/api/alerts")
 def get_alerts():
     try:
         with open("alerts_log.json", "r") as f:
             data = json.load(f)
-
-        return jsonify(list(reversed(data)))  # newest first
+        return jsonify(list(reversed(data)))
     except:
         return jsonify([])
 
 
-# ✅ SAFE REQUEST (retry)
+# ✅ SAFE REQUEST
 def safe_request(url, headers, params):
     for _ in range(3):
         try:
@@ -49,7 +47,7 @@ def safe_request(url, headers, params):
     return None
 
 
-# ✅ FETCH MARKET DATA
+# ✅ FETCH PRICES
 def get_prices_batch(mapping):
     url = "https://api.upstox.com/v2/market-quote/quotes"
 
@@ -94,8 +92,9 @@ def run_bot():
         time.sleep(2)
 
 
-# ✅ START EVERYTHING
+# ✅ START
 if __name__ == "__main__":
     threading.Thread(target=run_bot, daemon=True).start()
 
     app.run(host="0.0.0.0", port=5000)
+``
