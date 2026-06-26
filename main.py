@@ -27,6 +27,21 @@ stats = {
 print("🚀 Bot running ✅")
 send_alert("🤖 BOT STARTED ✅")
 
+@app.route("/api/reset", methods=["POST"])
+def reset_stats():
+    global stats
+
+    stats = {
+        "scanned": 0,
+        "open_trades": 0,
+        "closed_trades": 0,
+        "pnl": 0
+    }
+
+    print("🔄 Stats reset manually")
+
+    return jsonify({"status": "reset success"})
+
 
 # ✅ HOME
 @app.route("/")
