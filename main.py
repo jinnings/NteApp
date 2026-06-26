@@ -19,11 +19,13 @@ print("🚀 Bot running ✅")
 send_alert("🤖 BOT STARTED ✅")
 
 
+# ✅ HOME
 @app.route("/")
 def home():
     return app.send_static_file("dashboard.html")
 
 
+# ✅ ALERTS API
 @app.route("/api/alerts")
 def get_alerts():
     try:
@@ -34,7 +36,7 @@ def get_alerts():
         return jsonify([])
 
 
-# ✅ TEST MODE
+# ✅ TEST MODE (fake alerts)
 def generate_test_alerts():
     symbols = ["NIFTY", "BANKNIFTY", "RELIANCE", "TCS", "INFY"]
     strategies = ["BREAKOUT", "SCALPING", "REVERSAL"]
@@ -74,11 +76,17 @@ Target: {target}"""
         time.sleep(5)
 
 
-# ✅ LIVE API
+# ✅ LIVE MARKET API
 def get_prices_batch():
     url = "https://api.upstox.com/v2/market-quote/quotes"
-    headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
-    params = {"instrument_key": ",".join(MAPPING.values())}
+
+    headers = {
+        "Authorization": f"Bearer {ACCESS_TOKEN}"
+    }
+
+    params = {
+        "instrument_key": ",".join(MAPPING.values())
+    }
 
     try:
         res = requests.get(url, headers=headers, params=params)
@@ -92,7 +100,6 @@ def get_prices_batch():
         for symbol, key in MAPPING.items():
             try:
                 item = data["data"][key]
-
                 price = item["last_price"]
                 volume = item.get("volume", 0)
 
@@ -103,7 +110,7 @@ def get_prices_batch():
     return prices
 
 
-# ✅ LIVE BOT
+# ✅ ✅ LIVE BOT (WITH SCAN PRINT LIKE OLD VERSION)
 def run_bot():
     print("📈 LIVE BOT STARTED")
 
@@ -111,8 +118,15 @@ def run_bot():
         try:
             prices = get_prices_batch()
 
+            # ✅ process all stocks
             for symbol, (price, volume) in prices.items():
                 strategy.update(symbol, price, volume)
+
+            # ✅ process ranked signals
+            strategy.process_top_signals()
+
+            # ✅ OLD STYLE OUTPUT ✅
+            print(f"📊 Scanned: {len(prices)} stocks")
 
         except Exception as e:
             print("Bot Error:", e)
@@ -120,7 +134,7 @@ def run_bot():
         time.sleep(2)
 
 
-# ✅ PRICE FOR STATUS
+# ✅ PRICE SOURCE FOR STATUS
 def get_prices_for_status():
     if MODE == "LIVE":
         real = get_prices_batch()
@@ -135,7 +149,7 @@ def get_prices_for_status():
         }
 
 
-# ✅ TRADE STATUS
+# ✅ TRADE STATUS TRACKER
 def update_trade_status():
     while True:
         try:
@@ -160,7 +174,6 @@ def update_trade_status():
                     continue
 
                 current_price = prices[symbol]
-
                 target = alert.get("target")
                 sl = alert.get("sl")
 
@@ -194,7 +207,7 @@ def update_trade_status():
         time.sleep(3)
 
 
-# ✅ START
+# ✅ START SYSTEM
 if __name__ == "__main__":
 
     if MODE == "LIVE":
@@ -207,3 +220,4 @@ if __name__ == "__main__":
     threading.Thread(target=update_trade_status, daemon=True).start()
 
     app.run(host="0.0.0.0", port=5000)
+``
