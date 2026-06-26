@@ -14,8 +14,8 @@ TELEGRAM_TOKEN = "8848818821:AAHleXHHqPZN35Pp_27pNn0pfSsQXL5Fq9M"
 TELEGRAM_CHAT_ID = "-1003991593991"
 
 
-# ✅ MODE SWITCH
-MODE = "LIVE"   # 🔁 change to "LIVE" when market opens
+# ✅ MODE SWITCH,TEST
+MODE = "TEST"   # 🔁 change to "LIVE" when market opens
 
 
 
