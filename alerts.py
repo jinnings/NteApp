@@ -5,11 +5,12 @@ from config import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
 
 LOG_FILE = "alerts_log.json"
 
-def save_alert(message):
-    alert = {
-        "time": time.strftime('%Y-%m-%d %H:%M:%S'),
-        "message": message.strip()
-    }
+COOLDOWN_SECONDS = 300  # ✅ 5 minutes
+
+
+def save_alert(message, symbol, direction, entry, sl, target, strategy_name):
+
+    current_time = time.time()
 
     try:
         try:
@@ -17,6 +18,42 @@ def save_alert(message):
                 data = json.load(f)
         except:
             data = []
+
+        # ✅ CHECK EXISTING TRADES
+        for alert in data:
+            if alert.get("symbol") != symbol:
+                continue
+
+            if alert.get("strategy") != strategy_name:
+                continue
+
+            # ✅ SAME strategy + same stock
+            status = alert.get("status")
+            alert_time = alert.get("timestamp", 0)
+
+            # ✅ If still OPEN → block
+            if status == "OPEN":
+                print(f"⛔ Skip {symbol} ({strategy_name}) → active trade exists")
+                return
+
+            # ✅ If recently closed → apply cooldown
+            if current_time - alert_time < COOLDOWN_SECONDS:
+                print(f"⏳ Cooldown active for {symbol} ({strategy_name})")
+                return
+
+        # ✅ ALLOW NEW TRADE
+        alert = {
+            "time": time.strftime('%Y-%m-%d %H:%M:%S'),
+            "timestamp": current_time,
+            "message": message.strip(),
+            "symbol": symbol,
+            "direction": direction,
+            "entry": entry,
+            "sl": sl,
+            "target": target,
+            "strategy": strategy_name,
+            "status": "OPEN"
+        }
 
         data.append(alert)
         data = data[-200:]
@@ -27,16 +64,19 @@ def save_alert(message):
     except Exception as e:
         print("Log error:", e)
 
-def send_alert(message):
+
+def send_alert(message, symbol, direction, entry, sl, target, strategy_name):
     print("\nALERT:\n", message)
-    save_alert(message)
 
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    save_alert(message, symbol, direction, entry, sl, target, strategy_name)
 
-    try:
-        requests.post(url, data={
-            "chat_id": TELEGRAM_CHAT_ID,
-            "text": message
-        })
-    except Exception as e:
-        print("Telegram error:", e)
+    if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+
+        try:
+            requests.post(url, data={
+                "chat_id": TELEGRAM_CHAT_ID,
+                "text": message
+            })
+        except Exception as e:
+            print("Telegram error:", e)

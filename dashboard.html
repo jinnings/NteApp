@@ -11,51 +11,30 @@
             padding: 20px;
         }
 
-        h1 {
-            color: #38bdf8;
-        }
-
         .card {
             padding: 15px;
             margin-bottom: 12px;
             border-radius: 10px;
         }
 
-        .time {
-            font-size: 12px;
-        }
-
-        .time-bold {
-            font-weight: bold;
-        }
-
-        .buy { background: linear-gradient(135deg, #065f46, #22c55e); }
-        .sell { background: linear-gradient(135deg, #7f1d1d, #ef4444); }
-        .neutral { background: #1e293b; }
+        .buy { background: #22c55e; }
+        .sell { background: #ef4444; }
+        .neutral { background: #64748b; } /* ✅ GREY */
     </style>
 </head>
 
 <body>
 
 <h1>📊 Trading Alerts</h1>
-
 <div id="alerts-container">Loading...</div>
 
 <script>
 function convertToIST(utcTime) {
     const date = new Date(utcTime + " UTC");
 
-    const formatted = date.toLocaleString("en-IN", {
-        timeZone: "Asia/Kolkata",
-        day: "2-digit",
-        month: "short",
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit"
+    return date.toLocaleString("en-IN", {
+        timeZone: "Asia/Kolkata"
     });
-
-    const parts = formatted.split(", ");
-    return `${parts[0]}, <span class="time-bold">${parts[1]}</span>`;
 }
 
 function loadAlerts() {
@@ -65,19 +44,28 @@ function loadAlerts() {
 
             let html = "";
 
-            data.slice(0, 50).forEach(alert => {
+            data.forEach(alert => {
 
                 let cls = "neutral";
 
-                if (alert.message.includes("BUY")) cls = "buy";
-                else if (alert.message.includes("SELL")) cls = "sell";
+                if (alert.status !== "OPEN") {
+                    cls = "neutral"; // ✅ CLOSED = GREY
+                } else {
+                    if (alert.direction === "BUY") cls = "buy";
+                    else if (alert.direction === "SELL") cls = "sell";
+                }
 
-                html += `
-                    <div class="card ${cls}">
-                        <div class="time">${convertToIST(alert.time)}</div>
-                        <div>${alert.message}</div>
-                    </div>
-                `;
+              html += `
+    <div class="card ${cls}">
+        <div>${convertToIST(alert.time)}</div>
+        <div><b>${alert.symbol} ${alert.direction}</b></div>
+        <div>Strategy: ${alert.strategy}</div>
+        <div>Entry: ${alert.entry}</div>
+        <div>SL: ${alert.sl}</div>
+        <div>Target: ${alert.target}</div>
+        <div><b>Status: ${alert.status}</b></div>
+    </div>
+`;
             });
 
             document.getElementById("alerts-container").innerHTML = html;
@@ -85,7 +73,7 @@ function loadAlerts() {
 }
 
 loadAlerts();
-setInterval(loadAlerts, 5000);
+setInterval(loadAlerts, 3000);
 </script>
 
 </body>
