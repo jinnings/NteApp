@@ -96,4 +96,3 @@ def send_alert(message, symbol=None, direction=None, entry=None, sl=None, target
             })
         except Exception as e:
             print("Telegram error:", e)
-``
