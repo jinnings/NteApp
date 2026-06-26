@@ -41,19 +41,16 @@
             white-space: pre-wrap;
         }
 
-        /* ✅ BUY */
         .buy {
             background: linear-gradient(135deg, #065f46, #22c55e);
             color: #ecfdf5;
         }
 
-        /* ✅ SELL */
         .sell {
             background: linear-gradient(135deg, #7f1d1d, #ef4444);
             color: #fef2f2;
         }
 
-        /* ✅ DEFAULT */
         .neutral {
             background: #1e293b;
         }
@@ -69,10 +66,11 @@
 </div>
 
 <script>
+let lastCount = 0;
+
 function convertToIST(utcTime) {
     const date = new Date(utcTime + " UTC");
 
-    // ✅ Split date and time
     const formatted = date.toLocaleString("en-IN", {
         timeZone: "Asia/Kolkata",
         day: "2-digit",
@@ -82,12 +80,9 @@ function convertToIST(utcTime) {
         second: "2-digit"
     });
 
-    // Example: "22 Jun, 04:35:10 PM"
     const parts = formatted.split(", ");
 
-    return `
-        ${parts[0]}, <span class="time-bold">${parts[1]}</span>
-    `;
+    return `${parts[0]}, <span class="time-bold">${parts[1]}</span>`;
 }
 
 function loadAlerts() {
@@ -97,7 +92,13 @@ function loadAlerts() {
 
             let html = "";
 
-            data.forEach(alert => {
+            if (data.length > lastCount) {
+                new Audio("https://www.soundjay.com/buttons/sounds/button-3.mp3").play();
+            }
+
+            lastCount = data.length;
+
+            data.slice(0, 50).forEach(alert => {
 
                 let cls = "neutral";
 
@@ -117,10 +118,7 @@ function loadAlerts() {
         .catch(err => console.error("Error:", err));
 }
 
-// ✅ initial load
 loadAlerts();
-
-// ✅ auto refresh every 5 sec
 setInterval(loadAlerts, 5000);
 </script>
 

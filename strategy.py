@@ -3,64 +3,44 @@ import time
 from alerts import send_alert
 
 
-# =========================
-# ✅ ORIGINAL STRATEGY (UPDATED WITH SL/TGT)
-# =========================
 class MultiSignalStrategy:
     def __init__(self):
-
         self.price_history = defaultdict(lambda: deque(maxlen=100))
         self.volume_history = defaultdict(lambda: deque(maxlen=20))
 
-        self.last_sent_time = {}
         self.last_direction = {}
-
         self.signal_history = {}
-        self.SIGNAL_COOLDOWN = 900  # 15 min
+
+        self.SIGNAL_COOLDOWN = 900
 
         self.day_open = {}
-        self.COOLDOWN = 60
-
-        # ✅ ranking storage
         self.candidates = []
         self.last_rank_sent = 0
 
-    # =========================
-    # ✅ NEW: SL & TARGET LOGIC
-    # =========================
-    def get_trade_levels(self, price, direction, prices):
+    # ✅ REAL VWAP
+    def calculate_vwap(self, prices, volumes):
+        total_vol = sum(volumes)
+        if total_vol == 0:
+            return prices[-1]
+        return sum(p * v for p, v in zip(prices, volumes)) / total_vol
 
+    def get_trade_levels(self, price, direction, prices):
         recent = prices[-10:]
 
         if direction == "BUY":
-            stoploss = min(recent)
-            risk = price - stoploss
-
-            # minimum SL (avoid too tight SL)
-            risk = max(risk, price * 0.003)
-
+            stoploss = min(recent[:-1])
+            risk = max(price - stoploss, price * 0.003)
             target = price + (risk * 2)
-
-        else:  # SELL
-            stoploss = max(recent)
-            risk = stoploss - price
-
-            risk = max(risk, price * 0.003)
-
+        else:
+            stoploss = max(recent[:-1])
+            risk = max(stoploss - price, price * 0.003)
             target = price - (risk * 2)
 
         return round(stoploss, 2), round(target, 2)
 
-    # =========================
-
     def already_sent_recent(self, symbol, direction):
         key = f"{symbol}_{direction}"
         return key in self.signal_history and time.time() - self.signal_history[key] < self.SIGNAL_COOLDOWN
-
-    def get_day_change(self, symbol, price):
-        if symbol not in self.day_open:
-            self.day_open[symbol] = price
-        return ((price - self.day_open[symbol]) / self.day_open[symbol]) * 100
 
     def is_volume_increasing(self, symbol):
         vols = list(self.volume_history[symbol])
@@ -69,40 +49,19 @@ class MultiSignalStrategy:
     def confirm_candle(self, prices, direction):
         if len(prices) < 5:
             return False
-        if direction == "BUY":
-            return prices[-1] > prices[-2] > prices[-3]
-        else:
-            return prices[-1] < prices[-2] < prices[-3]
+        return prices[-1] > prices[-2] > prices[-3] if direction == "BUY" else prices[-1] < prices[-2] < prices[-3]
 
     def is_pullback(self, prices, direction):
         if len(prices) < 6:
             return False
-        if direction == "BUY":
-            return prices[-5] > prices[-3] and prices[-1] > prices[-2]
-        else:
-            return prices[-5] < prices[-3] and prices[-1] < prices[-2]
+        return prices[-5] > prices[-3] if direction == "BUY" else prices[-5] < prices[-3]
 
     def is_breakout(self, prices, direction):
         if len(prices) < 10:
             return False
-        if direction == "BUY":
-            return prices[-1] > max(prices[-10:-1])
-        else:
-            return prices[-1] < min(prices[-10:-1])
-
-    def vwap_trend(self, price, vwap, direction):
-        return price > vwap if direction == "BUY" else price < vwap
-
-    def calculate_score(self, price, vwap, day_change, momentum):
-        score = 0
-        score += min(abs(day_change) * 4, 15)
-        if abs(momentum) > 0.3:
-            score += min(abs(momentum) * 4, 8)
-        score += 8 if price > vwap else 4
-        return int(score)
+        return prices[-1] > max(prices[-10:-1]) if direction == "BUY" else prices[-1] < min(prices[-10:-1])
 
     def update(self, symbol, price, volume):
-
         if not symbol or price is None or volume < 8000:
             return
 
@@ -110,182 +69,29 @@ class MultiSignalStrategy:
         self.volume_history[symbol].append(volume)
 
         prices = list(self.price_history[symbol])
+        volumes = list(self.volume_history[symbol])
+
         if len(prices) < 20:
             return
 
-        vwap = sum(prices) / len(prices)
+        vwap = self.calculate_vwap(prices, volumes)
 
         m1 = prices[-1] - prices[-3]
         m5 = prices[-1] - prices[-10]
 
-        dir1 = "BUY" if m1 > 0 else "SELL"
-        dir5 = "BUY" if m5 > 0 else "SELL"
+        direction = "BUY" if m1 > 0 else "SELL"
 
-        if dir1 != dir5:
+        if (m1 > 0) != (m5 > 0):
             return
 
-        direction = dir1
-
-        if not self.vwap_trend(price, vwap, direction):
+        if direction == "BUY" and price < vwap:
+            return
+        if direction == "SELL" and price > vwap:
             return
 
         if not self.is_pullback(prices, direction):
             return
-
         if not self.is_breakout(prices, direction):
             return
-
         if not self.is_volume_increasing(symbol):
             return
-
-        if not self.confirm_candle(prices, direction):
-            return
-
-        if self.already_sent_recent(symbol, direction):
-            return
-
-        prev_dir = self.last_direction.get(symbol)
-        if prev_dir and prev_dir != direction:
-            return
-
-        day_change = self.get_day_change(symbol, price)
-        if abs(day_change) < 0.1:
-            return
-
-        score = self.calculate_score(price, vwap, day_change, m5)
-
-        # ✅ INSTANT SIGNAL
-        if score >= 22:
-
-            sl, tgt = self.get_trade_levels(price, direction, prices)
-
-            message = f"""
-🔥 INSTANT TRADE 🔥
-{symbol} → {direction}
-₹{round(price,2)}
-
-🎯 Target: ₹{tgt}
-🛑 Stoploss: ₹{sl}
-
-⭐ Score: {score}
-"""
-
-            send_alert(message)
-
-            self.signal_history[f"{symbol}_{direction}"] = time.time()
-            self.last_direction[symbol] = direction
-            return
-
-        # ✅ STORE FOR RANKING
-        if score >= 15:
-            self.candidates.append({
-                "symbol": symbol,
-                "direction": direction,
-                "price": price,
-                "score": score
-            })
-
-    def process_top_signals(self):
-
-        if time.time() - self.last_rank_sent < 60:
-            return
-
-        if not self.candidates:
-            return
-
-        top = sorted(self.candidates, key=lambda x: x["score"], reverse=True)[:3]
-
-        for t in top:
-
-            symbol = t["symbol"]
-            direction = t["direction"]
-            price = t["price"]
-            score = t["score"]
-
-            if self.already_sent_recent(symbol, direction):
-                continue
-
-            prices = list(self.price_history[symbol])
-            sl, tgt = self.get_trade_levels(price, direction, prices)
-
-            message = f"""
-🔥 TOP TRADE 🔥
-{symbol} → {direction}
-₹{round(price,2)}
-
-🎯 Target: ₹{tgt}
-🛑 Stoploss: ₹{sl}
-
-⭐ Score: {score}
-"""
-
-            send_alert(message)
-
-            self.signal_history[f"{symbol}_{direction}"] = time.time()
-            self.last_direction[symbol] = direction
-
-        self.candidates.clear()
-        self.last_rank_sent = time.time()
-
-
-# =========================
-# ✅ JINNING EFFECT (UNCHANGED)
-# =========================
-class JinningEffectStrategy:
-    def __init__(self):
-        self.close_history = defaultdict(lambda: deque(maxlen=150))
-        self.volume_history = defaultdict(lambda: deque(maxlen=10))
-
-        self.signal_history = {}
-        self.SIGNAL_COOLDOWN = 1800
-
-    def already_sent_recent(self, symbol):
-        return symbol in self.signal_history and time.time() - self.signal_history[symbol] < self.SIGNAL_COOLDOWN
-
-    def update_daily(self, symbol, close_price, volume):
-
-        if not symbol or close_price is None or volume is None:
-            return
-
-        self.close_history[symbol].append(close_price)
-        self.volume_history[symbol].append(volume)
-
-        closes = list(self.close_history[symbol])
-        volumes = list(self.volume_history[symbol])
-
-        if len(closes) < 130:
-            return
-
-        recent_5_max = max(closes[-5:])
-        past_120_max = max(closes[-126:-6])
-
-        if recent_5_max <= past_120_max * 1.05:
-            return
-
-        if len(volumes) < 6:
-            return
-
-        avg_5_volume = sum(volumes[-6:-1]) / 5
-        current_volume = volumes[-1]
-
-        if current_volume <= avg_5_volume:
-            return
-
-        if closes[-1] <= closes[-2]:
-            return
-
-        if self.already_sent_recent(symbol):
-            return
-
-        message = f"""
-🔥 JINNING EFFECT 🔥
-{symbol} → BUY
-₹{round(close_price, 2)}
-
-✅ 5-Day Breakout > 120D + 5%
-✅ Volume > 5D Avg
-✅ Strong Closing
-"""
-
-        send_alert(message)
-        self.signal_history[symbol] = time.time()
