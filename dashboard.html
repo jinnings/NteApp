@@ -49,12 +49,10 @@ fetch('/api/alerts')
 .then(data=>{
 let h="";
 data.forEach(a=>{
-
 let cls="neutral";
 if(a.status==="OPEN"){
 cls = a.direction==="BUY"?"buy":"sell";
 }
-
 h+=`<div class="card ${cls}">
 ${a.symbol} ${a.direction}<br>
 Entry: ${a.entry}<br>
@@ -69,8 +67,22 @@ document.getElementById("alerts").innerHTML=h;
 function resetStats(){
 fetch('/api/reset',{method:'POST'})
 .then(()=>{
+
+// ✅ instant UI clear
 document.getElementById("alerts").innerHTML="";
+document.getElementById("stats").innerHTML=
+`<div class="card neutral">
+✅ Scanned: 0<br>
+🟢 Open: 0<br>
+⚪ Closed: 0<br>
+💰 P&L: ₹0
+</div>`;
+
+setTimeout(()=>{
 loadStats();
+loadAlerts();
+},500);
+
 });
 }
 
