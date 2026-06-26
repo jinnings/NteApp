@@ -1,141 +1,84 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Trading Alerts Dashboard</title>
+<title>Trading Dashboard</title>
 
-    <style>
-        body {
-            font-family: Arial;
-            background: #0f172a;
-            color: #e2e8f0;
-            padding: 20px;
-        }
+<style>
+body { font-family: Arial; background:#0f172a; color:#e2e8f0; padding:20px; }
+.card { padding:15px; margin:10px 0; border-radius:10px; }
+.buy { background:#22c55e; }
+.sell { background:#ef4444; }
+.neutral { background:#64748b; }
+button { padding:10px; background:red; border:none; color:white; border-radius:5px; cursor:pointer; }
+</style>
 
-        .card {
-            padding: 15px;
-            margin-bottom: 12px;
-            border-radius: 10px;
-        }
-
-        .buy { background: #22c55e; }
-        .sell { background: #ef4444; }
-        .neutral { background: #64748b; }
-
-        button {
-            padding: 10px;
-            background: #ef4444;
-            border: none;
-            color: white;
-            border-radius: 6px;
-            cursor: pointer;
-            margin-bottom: 20px;
-        }
-
-        button:hover {
-            background: #dc2626;
-        }
-    </style>
 </head>
 
 <body>
 
-<h1>📊 Trading Alerts</h1>
+<h1>📊 Trading Dashboard</h1>
 
-<!-- ✅ LIVE STATS -->
 <h2>📈 Live Stats</h2>
-<div id="stats">Loading...</div>
+<div id="stats"></div>
 
 <button onclick="resetStats()">🔄 Reset Stats</button>
 
 <hr>
 
-<!-- ✅ ALERTS -->
-<div id="alerts-container">Loading...</div>
-
+<div id="alerts"></div>
 
 <script>
-function convertToIST(utcTime) {
-    const date = new Date(utcTime + " UTC");
 
-    return date.toLocaleString("en-IN", {
-        timeZone: "Asia/Kolkata"
-    });
+function loadStats(){
+fetch('/api/stats')
+.then(res=>res.json())
+.then(d=>{
+document.getElementById("stats").innerHTML=
+`<div class="card neutral">
+✅ Scanned: ${d.scanned}<br>
+🟢 Open: ${d.open_trades}<br>
+⚪ Closed: ${d.closed_trades}<br>
+💰 P&L: ₹${d.pnl}
+</div>`;
+});
 }
 
+function loadAlerts(){
+fetch('/api/alerts')
+.then(res=>res.json())
+.then(data=>{
+let h="";
+data.forEach(a=>{
 
-// ✅ LOAD ALERTS
-function loadAlerts() {
-    fetch("/api/alerts")
-        .then(res => res.json())
-        .then(data => {
-
-            let html = "";
-
-            data.forEach(alert => {
-
-                let cls = "neutral";
-
-                if (alert.status !== "OPEN") {
-                    cls = "neutral";
-                } else {
-                    if (alert.direction === "BUY") cls = "buy";
-                    else if (alert.direction === "SELL") cls = "sell";
-                }
-
-                html += `
-                    <div class="card ${cls}">
-                        <div>${convertToIST(alert.time)}</div>
-                        <div><b>${alert.symbol} ${alert.direction}</b></div>
-                        <div>Strategy: ${alert.strategy}</div>
-                        <div>Entry: ${alert.entry}</div>
-                        <div>SL: ${alert.sl}</div>
-                        <div>Target: ${alert.target}</div>
-                        <div><b>Status: ${alert.status}</b></div>
-                    </div>
-                `;
-            });
-
-            document.getElementById("alerts-container").innerHTML = html;
-        });
+let cls="neutral";
+if(a.status==="OPEN"){
+cls = a.direction==="BUY"?"buy":"sell";
 }
 
-
-// ✅ LOAD STATS
-function loadStats() {
-    fetch("/api/stats")
-        .then(res => res.json())
-        .then(data => {
-            document.getElementById("stats").innerHTML = `
-                <div class="card neutral">
-                    ✅ Scanned: ${data.scanned}<br>
-                    🟢 Open Trades: ${data.open_trades}<br>
-                    ⚪ Closed Trades: ${data.closed_trades}<br>
-                    💰 P&L: ₹${data.pnl}
-                </div>
-            `;
-        });
+h+=`<div class="card ${cls}">
+${a.symbol} ${a.direction}<br>
+Entry: ${a.entry}<br>
+SL: ${a.sl} | TGT: ${a.target}<br>
+Status: ${a.status}
+</div>`;
+});
+document.getElementById("alerts").innerHTML=h;
+});
 }
 
-
-// ✅ RESET BUTTON
-function resetStats() {
-    fetch("/api/reset", {
-        method: "POST"
-    })
-    .then(res => res.json())
-    .then(data => {
-        alert("✅ Stats Reset!");
-        loadStats();
-    });
-}
-
-
-// ✅ AUTO REFRESH
-loadAlerts();
+function resetStats(){
+fetch('/api/reset',{method:'POST'})
+.then(()=>{
+document.getElementById("alerts").innerHTML="";
 loadStats();
+});
+}
 
-setInterval(loadAlerts, 3000);
-setInterval(loadStats, 3000);
+setInterval(loadStats,3000);
+setInterval(loadAlerts,3000);
+
+loadStats();
+loadAlerts();
 
 </script>
 
