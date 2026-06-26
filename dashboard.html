@@ -20,6 +20,20 @@
         .buy { background: #22c55e; }
         .sell { background: #ef4444; }
         .neutral { background: #64748b; }
+
+        button {
+            padding: 10px;
+            background: #ef4444;
+            border: none;
+            color: white;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-bottom: 20px;
+        }
+
+        button:hover {
+            background: #dc2626;
+        }
     </style>
 </head>
 
@@ -27,13 +41,17 @@
 
 <h1>📊 Trading Alerts</h1>
 
-<!-- ✅ ADD THIS -->
+<!-- ✅ LIVE STATS -->
 <h2>📈 Live Stats</h2>
 <div id="stats">Loading...</div>
 
+<button onclick="resetStats()">🔄 Reset Stats</button>
+
 <hr>
 
+<!-- ✅ ALERTS -->
 <div id="alerts-container">Loading...</div>
+
 
 <script>
 function convertToIST(utcTime) {
@@ -44,6 +62,8 @@ function convertToIST(utcTime) {
     });
 }
 
+
+// ✅ LOAD ALERTS
 function loadAlerts() {
     fetch("/api/alerts")
         .then(res => res.json())
@@ -80,6 +100,7 @@ function loadAlerts() {
 }
 
 
+// ✅ LOAD STATS
 function loadStats() {
     fetch("/api/stats")
         .then(res => res.json())
@@ -96,7 +117,20 @@ function loadStats() {
 }
 
 
-// ✅ RUN BOTH
+// ✅ RESET BUTTON
+function resetStats() {
+    fetch("/api/reset", {
+        method: "POST"
+    })
+    .then(res => res.json())
+    .then(data => {
+        alert("✅ Stats Reset!");
+        loadStats();
+    });
+}
+
+
+// ✅ AUTO REFRESH
 loadAlerts();
 loadStats();
 
