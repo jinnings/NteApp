@@ -13,6 +13,9 @@ from mapping import MAPPING
 
 strategy = MultiSignalStrategy()
 
+# ✅ reverse mapping (fast lookup)
+REVERSE_MAPPING = {v: k for k, v in MAPPING.items()}
+
 app = Flask(__name__, static_folder=".")
 
 print("🚀 Bot running ✅")
@@ -25,7 +28,7 @@ def home():
     return app.send_static_file("dashboard.html")
 
 
-# ✅ ALERTS API
+# ✅ ALERT API
 @app.route("/api/alerts")
 def get_alerts():
     try:
@@ -36,7 +39,7 @@ def get_alerts():
         return jsonify([])
 
 
-# ✅ TEST MODE (fake alerts)
+# ✅ TEST MODE
 def generate_test_alerts():
     symbols = ["NIFTY", "BANKNIFTY", "RELIANCE", "TCS", "INFY"]
     strategies = ["BREAKOUT", "SCALPING", "REVERSAL"]
@@ -76,7 +79,7 @@ Target: {target}"""
         time.sleep(5)
 
 
-# ✅ LIVE MARKET API
+# ✅ ✅ FIXED LIVE API (BATCHING ✅)
 def get_prices_batch():
     url = "https://api.upstox.com/v2/market-quote/quotes"
 
@@ -84,33 +87,44 @@ def get_prices_batch():
         "Authorization": f"Bearer {ACCESS_TOKEN}"
     }
 
-    params = {
-        "instrument_key": ",".join(MAPPING.values())
-    }
-
-    try:
-        res = requests.get(url, headers=headers, params=params)
-        data = res.json()
-    except:
-        return {}
-
     prices = {}
+    keys = list(MAPPING.values())
 
-    if "data" in data:
-        for symbol, key in MAPPING.items():
-            try:
-                item = data["data"][key]
-                price = item["last_price"]
-                volume = item.get("volume", 0)
+    # ✅ batch API (max ~20 per request)
+    for i in range(0, len(keys), 20):
+        batch = keys[i:i+20]
 
-                prices[symbol] = (price, volume)
-            except:
-                continue
+        try:
+            res = requests.get(
+                url,
+                headers=headers,
+                params={"instrument_key": ",".join(batch)},
+                timeout=5
+            )
+
+            data = res.json()
+
+            for key, item in data.get("data", {}).items():
+                try:
+                    price = item["last_price"]
+                    volume = item.get("volume", 0)
+
+                    # ✅ fast symbol lookup
+                    symbol = REVERSE_MAPPING.get(key)
+
+                    if symbol:
+                        prices[symbol] = (price, volume)
+
+                except:
+                    continue
+
+        except Exception as e:
+            print("Batch error:", e)
 
     return prices
 
 
-# ✅ ✅ LIVE BOT (WITH SCAN PRINT LIKE OLD VERSION)
+# ✅ ✅ LIVE BOT (WITH OLD SCAN OUTPUT)
 def run_bot():
     print("📈 LIVE BOT STARTED")
 
@@ -118,14 +132,13 @@ def run_bot():
         try:
             prices = get_prices_batch()
 
-            # ✅ process all stocks
             for symbol, (price, volume) in prices.items():
                 strategy.update(symbol, price, volume)
 
-            # ✅ process ranked signals
+            # ✅ processing ranking signals
             strategy.process_top_signals()
 
-            # ✅ OLD STYLE OUTPUT ✅
+            # ✅ EXACT OLD OUTPUT
             print(f"📊 Scanned: {len(prices)} stocks")
 
         except Exception as e:
@@ -134,7 +147,7 @@ def run_bot():
         time.sleep(2)
 
 
-# ✅ PRICE SOURCE FOR STATUS
+# ✅ PRICE SOURCE FOR STATUS TRACKING
 def get_prices_for_status():
     if MODE == "LIVE":
         real = get_prices_batch()
@@ -149,7 +162,7 @@ def get_prices_for_status():
         }
 
 
-# ✅ TRADE STATUS TRACKER
+# ✅ TRADE STATUS
 def update_trade_status():
     while True:
         try:
@@ -160,7 +173,6 @@ def update_trade_status():
                 alerts = []
 
             prices = get_prices_for_status()
-
             updated = False
 
             for alert in alerts:
