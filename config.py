@@ -15,7 +15,7 @@ TELEGRAM_CHAT_ID = "-1003991593991"
 
 
 # ✅ MODE SWITCH,TEST
-MODE = "TEST"   # 🔁 change to "LIVE" when market opens
+MODE = "LIVE"   # 🔁 change to "LIVE" when market opens
 
 
 
