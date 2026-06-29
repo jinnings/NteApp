@@ -4,6 +4,7 @@ from alerts import send_alert, get_ist_time
 
 
 class MultiSignalStrategy:
+
     def __init__(self):
 
         self.strategy_name = "STB (NteScalping)"
@@ -43,7 +44,7 @@ class MultiSignalStrategy:
 
         return True
 
-    # ✅ SUPPORT
+    # ✅ SUPPORT FUNCTIONS
     def get_day_change(self, symbol, price):
         if symbol not in self.day_open:
             self.day_open[symbol] = price
@@ -51,26 +52,38 @@ class MultiSignalStrategy:
 
     def get_trade_levels(self, price, direction, prices):
         recent = prices[-10:]
+
         if direction == "BUY":
             sl = min(recent)
             risk = max(price - sl, price * 0.003)
-            target = price + risk * 2
+            target = price + (risk * 2)
         else:
             sl = max(recent)
             risk = max(sl - price, price * 0.003)
-            target = price - risk * 2
+            target = price - (risk * 2)
+
         return round(sl, 2), round(target, 2)
 
-    # ✅ EXTRA METRICS
+    # ✅ SCORE (OLD SYSTEM)
     def calculate_score(self, price, vwap, day_change, momentum):
-        score = min(abs(day_change) * 4, 15)
+        score = 0
+
+        score += min(abs(day_change) * 4, 15)
+
         if abs(momentum) > 0.3:
             score += min(abs(momentum) * 4, 8)
+
         score += 8 if price > vwap else 4
+
         return int(score)
 
+    # ✅ EXTRA METRICS
     def calculate_confidence(self, score, day_change, momentum):
-        return min(int(50 + score * 1.5 + abs(day_change)*2 + abs(momentum)*3), 100)
+        confidence = 50
+        confidence += score * 1.5
+        confidence += min(abs(day_change) * 2, 10)
+        confidence += min(abs(momentum) * 3, 10)
+        return min(int(confidence), 100)
 
     def get_trend(self, prices):
         move = abs(prices[-1] - prices[-15]) / prices[-1]
@@ -78,6 +91,7 @@ class MultiSignalStrategy:
 
     def get_risk(self, price, sl, confidence, trend):
         pct = abs(price - sl) / price
+
         if pct < 0.004:
             risk = "LOW"
         elif pct < 0.008:
@@ -85,7 +99,8 @@ class MultiSignalStrategy:
         else:
             risk = "HIGH"
 
-        if confidence > 85 and trend == "STRONG":
+        # ✅ Adjust risk
+        if confidence >= 85 and trend == "STRONG":
             risk = "LOW"
         if confidence < 65:
             risk = "HIGH"
@@ -95,6 +110,7 @@ class MultiSignalStrategy:
     # ✅ MAIN ENGINE
     def update(self, symbol, price, volume):
 
+        # ✅ Basic filter
         if volume < 8000:
             return
 
@@ -102,20 +118,29 @@ class MultiSignalStrategy:
         self.volume_history[symbol].append(volume)
 
         prices = list(self.price_history[symbol])
+
         if len(prices) < 20:
             return
 
+        # ✅ HTF filter
         if not self.passes_htf_filter(symbol):
             return
 
         vwap = sum(prices) / len(prices)
+
         m1 = prices[-1] - prices[-3]
         m5 = prices[-1] - prices[-10]
 
         direction = "BUY" if m1 > 0 else "SELL"
 
         day_change = self.get_day_change(symbol, price)
+
+        # ✅ SCORE
         score = self.calculate_score(price, vwap, day_change, m5)
+
+        # ✅ Filter weak trades
+        if score < 15:
+            return
 
         sl, tgt = self.get_trade_levels(price, direction, prices)
 
@@ -123,14 +148,23 @@ class MultiSignalStrategy:
         trend = self.get_trend(prices)
         risk = self.get_risk(price, sl, confidence, trend)
 
+        # ✅ ✅ FINAL TRADE TYPE LOGIC
+        if score >= 22 and risk == "LOW":
+            trade_type = "🔥 INSTANT PREMIUM"
+        elif score >= 22:
+            trade_type = "🔥 INSTANT TRADE"
+        else:
+            trade_type = "🔥 TOP TRADE"
+
+        # ✅ ALERT MESSAGE
         message = f"""
-🔥 TRADE ALERT 🔥
+{trade_type}
 Strategy: {self.strategy_name}
 
 {symbol} → {direction}
 Time: {get_ist_time()}
 
-Entry: ₹{price}
+Entry: ₹{round(price, 2)}
 SL: ₹{sl}
 Target: ₹{tgt}
 
@@ -140,5 +174,16 @@ Target: ₹{tgt}
 ⚠️ Risk: {risk}
 """
 
-        send_alert(message, symbol, direction, price, sl, tgt,
-                   self.strategy_name, confidence, trend, risk)
+        # ✅ SEND ALERT
+        send_alert(
+            message,
+            symbol,
+            direction,
+            price,
+            sl,
+            tgt,
+            self.strategy_name,
+            confidence,
+            trend,
+            risk
+        )

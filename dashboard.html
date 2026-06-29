@@ -39,6 +39,7 @@
             border-radius: 10px;
         }
 
+        /* ✅ PREMIUM HIGHLIGHT */
         .best {
             border: 2px solid gold;
             box-shadow: 0 0 12px gold;
@@ -115,22 +116,6 @@
 
 <script>
 
-// ✅ BACK BUTTON EXIT CONFIRM
-history.pushState(null, null, location.href);
-
-window.onpopstate = function () {
-    const exit = confirm("Do you want to exit the dashboard?");
-    
-    if (exit) {
-        // allow exit
-        window.history.back();
-    } else {
-        // stay on page
-        history.pushState(null, null, location.href);
-    }
-};
-
-
 async function loadAlerts() {
 
     const res = await fetch("/api/alerts");
@@ -146,19 +131,6 @@ async function loadAlerts() {
     container.innerHTML = "";
 
     data.reverse();
-
-    // ✅ FIND BEST TRADE
-    let bestTrade = null;
-
-    data.forEach(a => {
-        if (!a.symbol) return;
-
-        if (a.risk === "LOW" && a.trend === "STRONG") {
-            if (!bestTrade || a.confidence > bestTrade.confidence) {
-                bestTrade = a;
-            }
-        }
-    });
 
     data.forEach(alert => {
 
@@ -185,13 +157,13 @@ async function loadAlerts() {
         if (risk === "LOW") riskClass = "low";
         if (risk === "HIGH") riskClass = "high";
 
-        // ✅ BEST CHECK
-        let isBest = bestTrade && alert.symbol === bestTrade.symbol;
+        // ✅ ✅ ONLY INSTANT PREMIUM DETECTION
+        let isPremium = alert.message && alert.message.includes("INSTANT PREMIUM");
 
         const html = `
-            <div class="alert ${cls} ${isBest ? "best" : ""}">
+            <div class="alert ${cls} ${isPremium ? "best" : ""}">
 
-                ${isBest ? `<div class="best-label">⭐ BEST TRADE</div>` : ""}
+                ${isPremium ? `<div class="best-label">🔥 INSTANT PREMIUM</div>` : ""}
 
                 <div class="line">
                     <b>${symbol} → ${direction}</b>
