@@ -12,21 +12,23 @@ from config import MODE, ACCESS_TOKEN
 from strategy import MultiSignalStrategy
 from mapping import MAPPING
 
+# ✅ INIT
 strategy = MultiSignalStrategy()
 app = Flask(__name__, static_folder=".")
+
 
 print("🚀 Bot running ✅")
 send_alert(f"🤖 BOT STARTED ✅\nTime: {get_ist_time()}")
 
 
+# ==============================
+# ✅ DASHBOARD ROUTES
+# ==============================
+
 @app.route("/")
 def home():
     return app.send_static_file("dashboard.html")
 
-from flask import Flask, jsonify
-import json
-
-app = Flask(__name__)
 
 @app.route("/api/alerts")
 def get_alerts():
@@ -39,9 +41,9 @@ def get_alerts():
     return jsonify(data)
 
 
-if __name__ == "__main__":
-    app.run(debug=True)
-
+# ==============================
+# ✅ MARKET DATA
+# ==============================
 
 def get_prices_batch(mapping):
     url = "https://api.upstox.com/v2/market-quote/quotes"
@@ -79,6 +81,10 @@ def get_prices_batch(mapping):
     return prices
 
 
+# ==============================
+# ✅ LIVE BOT
+# ==============================
+
 def run_bot():
     print("📈 LIVE MODE STARTED")
 
@@ -97,44 +103,66 @@ def run_bot():
         time.sleep(5)
 
 
+# ==============================
+# ✅ TEST BOT
+# ==============================
+
 def generate_test_alerts():
-    symbols = ["NIFTY", "BANKNIFTY", "RELIANCE", "TCS", "INFY"]
-    strategies = ["BREAKOUT", "SCALPING", "REVERSAL"]
 
-    base_prices = {
-        "NIFTY": 23500,
-        "BANKNIFTY": 52000,
-        "RELIANCE": 3000,
-        "TCS": 3800,
-        "INFY": 1500
-    }
-
+    symbols = ["RELIANCE", "TCS", "INFY"]
     print("🧪 TEST MODE STARTED")
 
     while True:
         symbol = random.choice(symbols)
-        strategy_name = random.choice(strategies)
         direction = random.choice(["BUY", "SELL"])
 
-        price = base_prices[symbol] + random.randint(-100, 100)
+        price = random.randint(1000, 3000)
 
         if direction == "BUY":
-            sl = price - random.randint(10, 80)
-            target = price + random.randint(20, 150)
+            sl = price - 20
+            target = price + 40
         else:
-            sl = price + random.randint(10, 80)
-            target = price - random.randint(20, 150)
+            sl = price + 20
+            target = price - 40
 
-        message = f"""{symbol} {direction} ({strategy_name})
+        confidence = random.randint(60, 95)
+        trend = random.choice(["STRONG", "MEDIUM"])
+        risk = random.choice(["LOW", "MEDIUM", "HIGH"])
+
+        message = f"""
+🔥 TRADE ALERT 🔥
+
+{symbol} → {direction}
 Time: {get_ist_time()}
-Entry: {price}
-SL: {sl}
-Target: {target}"""
 
-        send_alert(message, symbol, direction, price, sl, target, strategy_name)
+Entry: ₹{price}
+SL: ₹{sl}
+Target: ₹{target}
+
+📊 Confidence: {confidence}%
+📈 Trend: {trend}
+⚠️ Risk: {risk}
+"""
+
+        send_alert(
+            message,
+            symbol,
+            direction,
+            price,
+            sl,
+            target,
+            "TEST",
+            confidence,
+            trend,
+            risk
+        )
 
         time.sleep(5)
 
+
+# ==============================
+# ✅ START APP + BOT
+# ==============================
 
 if __name__ == "__main__":
 
