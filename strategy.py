@@ -19,9 +19,24 @@ class MultiSignalStrategy:
         self.last_rank_sent = 0
 
 
+    # ✅ MARKET STATE (NEW)
+    def get_market_state(self, prices):
+        if len(prices) < 20:
+            return "NORMAL"
+
+        range_val = max(prices[-15:]) - min(prices[-15:])
+        volatility = range_val / prices[-1]
+
+        if volatility < 0.003:
+            return "LOW"
+        elif volatility > 0.01:
+            return "HIGH"
+        else:
+            return "NORMAL"
+
+
     # ✅ SL / TARGET
     def get_trade_levels(self, price, direction, prices):
-
         recent = prices[-10:]
 
         if direction == "BUY":
@@ -54,7 +69,7 @@ class MultiSignalStrategy:
         return len(vols) >= 3 and vols[-1] > vols[-2] > vols[-3]
 
 
-    # ✅ STRUCTURE CONFIRM
+    # ✅ STRUCTURE
     def confirm_candle(self, prices, direction):
         if len(prices) < 5:
             return False
@@ -68,25 +83,34 @@ class MultiSignalStrategy:
         return prices[-5] > prices[-3] and prices[-1] > prices[-2] if direction == "BUY" else prices[-5] < prices[-3] and prices[-1] < prices[-2]
 
 
-    # ✅ ✅ STRONG BREAKOUT (ANTI-FAKE)
+    # ✅ ✅ ADAPTIVE BREAKOUT
     def is_breakout(self, prices, direction):
+
         if len(prices) < 12:
             return False
+
+        state = self.get_market_state(prices)
 
         prev_high = max(prices[-11:-2])
         prev_low = min(prices[-11:-2])
         current = prices[-1]
 
-        threshold = current * 0.001  # strength filter
+        # ✅ Adaptive threshold
+        if state == "LOW":
+            threshold = current * 0.0005
+        elif state == "HIGH":
+            threshold = current * 0.0015
+        else:
+            threshold = current * 0.0008
 
         if direction == "BUY":
             if current <= prev_high:
                 return False
             if current - prev_high < threshold:
                 return False
-            if current < prices[-2]:  # rejection
+            if current < prices[-2]:
                 return False
-            if prices[-2] < prices[-3]:  # no continuation
+            if prices[-2] < prices[-3]:
                 return False
             return True
 
@@ -102,14 +126,15 @@ class MultiSignalStrategy:
             return True
 
 
-    # ✅ VWAP FILTER
+    # ✅ VWAP
     def vwap_trend(self, price, vwap, direction):
         return price > vwap if direction == "BUY" else price < vwap
 
 
-    # ✅ ✅ SCORE
+    # ✅ SCORE (UNCHANGED)
     def calculate_score(self, price, vwap, day_change, momentum):
         score = 0
+
         score += min(abs(day_change) * 4, 15)
 
         if abs(momentum) > 0.3:
@@ -120,43 +145,68 @@ class MultiSignalStrategy:
         return int(score)
 
 
-    # ✅ ✅ ✅ NEW FILTERS (HIGH ACCURACY)
-
+    # ✅ ✅ ADAPTIVE TREND
     def is_strong_trend(self, prices, direction):
         if len(prices) < 15:
             return False
 
+        state = self.get_market_state(prices)
         move = prices[-1] - prices[-15]
 
-        if direction == "BUY":
-            return move > prices[-1] * 0.004
+        if state == "LOW":
+            threshold = 0.0015
+        elif state == "HIGH":
+            threshold = 0.005
         else:
-            return move < -(prices[-1] * 0.004)
+            threshold = 0.0025
+
+        if direction == "BUY":
+            return move > prices[-1] * threshold
+        else:
+            return move < -(prices[-1] * threshold)
 
 
+    # ✅ ✅ ADAPTIVE SIDEWAYS
+    def is_sideways(self, prices):
+        if len(prices) < 10:
+            return False
+
+        state = self.get_market_state(prices)
+
+        high = max(prices[-10:])
+        low = min(prices[-10:])
+        range_pct = (high - low) / prices[-1]
+
+        if state == "LOW":
+            return range_pct < 0.002
+        elif state == "HIGH":
+            return False
+        else:
+            return range_pct < 0.0035
+
+
+    # ✅ ✅ ADAPTIVE LIQUIDITY TRAP
     def is_liquidity_trap(self, prices, direction):
         if len(prices) < 6:
             return False
 
+        state = self.get_market_state(prices)
         spike = abs(prices[-2] - prices[-4])
 
-        if spike < prices[-1] * 0.002:
+        if state == "LOW":
+            spike_threshold = prices[-1] * 0.003
+        elif state == "HIGH":
+            spike_threshold = prices[-1] * 0.0015
+        else:
+            spike_threshold = prices[-1] * 0.002
+
+        if spike < spike_threshold:
             return False
 
         if direction == "BUY":
             return prices[-1] < prices[-2]
         else:
             return prices[-1] > prices[-2]
-
-
-    def is_sideways(self, prices):
-        if len(prices) < 10:
-            return False
-
-        high = max(prices[-10:])
-        low = min(prices[-10:])
-
-        return (high - low) < (prices[-1] * 0.005)
 
 
     # ✅ ✅ MAIN ENGINE
@@ -189,7 +239,7 @@ class MultiSignalStrategy:
         if not self.vwap_trend(price, vwap, direction):
             return
 
-        # ✅ ✅ NEW HIGH ACCURACY FILTERS
+        # ✅ ✅ ADAPTIVE FILTERS
         if self.is_sideways(prices):
             return
 
@@ -199,7 +249,7 @@ class MultiSignalStrategy:
         if self.is_liquidity_trap(prices, direction):
             return
 
-        # ✅ ORIGINAL FLOW CONTINUES
+        # ✅ ORIGINAL FLOW
         if not self.is_pullback(prices, direction):
             return
 
@@ -215,8 +265,7 @@ class MultiSignalStrategy:
         if self.already_sent_recent(symbol, direction):
             return
 
-        prev_dir = self.last_direction.get(symbol)
-        if prev_dir and prev_dir != direction:
+        if self.last_direction.get(symbol) == ("SELL" if direction == "BUY" else "BUY"):
             return
 
         day_change = self.get_day_change(symbol, price)
@@ -246,7 +295,7 @@ Target: ₹{tgt}
             self.last_direction[symbol] = direction
             return
 
-        # ✅ STORE
+        # ✅ TOP TRADE
         if score >= 15:
             self.candidates.append({
                 "symbol": symbol,
@@ -258,9 +307,8 @@ Target: ₹{tgt}
         self.process_top_signals()
 
 
-    # ✅ TOP RANKING
+    # ✅ RANKING ENGINE
     def process_top_signals(self):
-
         if time.time() - self.last_rank_sent < 60:
             return
 
