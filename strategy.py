@@ -15,7 +15,6 @@ class MultiSignalStrategy:
 
         self.day_open = {}
 
-        # ✅ ranking system
         self.candidates = []
         self.last_rank_sent = 0
 
@@ -69,11 +68,38 @@ class MultiSignalStrategy:
         return prices[-5] > prices[-3] and prices[-1] > prices[-2] if direction == "BUY" else prices[-5] < prices[-3] and prices[-1] < prices[-2]
 
 
-    # ✅ BREAKOUT
+    # ✅ ✅ STRONG BREAKOUT (ANTI-FAKE)
     def is_breakout(self, prices, direction):
-        if len(prices) < 10:
+        if len(prices) < 12:
             return False
-        return prices[-1] > max(prices[-10:-1]) if direction == "BUY" else prices[-1] < min(prices[-10:-1])
+
+        prev_high = max(prices[-11:-2])
+        prev_low = min(prices[-11:-2])
+        current = prices[-1]
+
+        threshold = current * 0.001  # strength filter
+
+        if direction == "BUY":
+            if current <= prev_high:
+                return False
+            if current - prev_high < threshold:
+                return False
+            if current < prices[-2]:  # rejection
+                return False
+            if prices[-2] < prices[-3]:  # no continuation
+                return False
+            return True
+
+        else:
+            if current >= prev_low:
+                return False
+            if prev_low - current < threshold:
+                return False
+            if current > prices[-2]:
+                return False
+            if prices[-2] > prices[-3]:
+                return False
+            return True
 
 
     # ✅ VWAP FILTER
@@ -81,23 +107,59 @@ class MultiSignalStrategy:
         return price > vwap if direction == "BUY" else price < vwap
 
 
-    # ✅ ✅ ✅ ORIGINAL STRONG SCORE LOGIC
+    # ✅ ✅ SCORE
     def calculate_score(self, price, vwap, day_change, momentum):
         score = 0
-
-        # 📊 Day move strength
         score += min(abs(day_change) * 4, 15)
 
-        # ⚡ Momentum
         if abs(momentum) > 0.3:
             score += min(abs(momentum) * 4, 8)
 
-        # 📈 VWAP bias
         score += 8 if price > vwap else 4
 
         return int(score)
 
 
+    # ✅ ✅ ✅ NEW FILTERS (HIGH ACCURACY)
+
+    def is_strong_trend(self, prices, direction):
+        if len(prices) < 15:
+            return False
+
+        move = prices[-1] - prices[-15]
+
+        if direction == "BUY":
+            return move > prices[-1] * 0.004
+        else:
+            return move < -(prices[-1] * 0.004)
+
+
+    def is_liquidity_trap(self, prices, direction):
+        if len(prices) < 6:
+            return False
+
+        spike = abs(prices[-2] - prices[-4])
+
+        if spike < prices[-1] * 0.002:
+            return False
+
+        if direction == "BUY":
+            return prices[-1] < prices[-2]
+        else:
+            return prices[-1] > prices[-2]
+
+
+    def is_sideways(self, prices):
+        if len(prices) < 10:
+            return False
+
+        high = max(prices[-10:])
+        low = min(prices[-10:])
+
+        return (high - low) < (prices[-1] * 0.005)
+
+
+    # ✅ ✅ MAIN ENGINE
     def update(self, symbol, price, volume):
 
         if not symbol or price is None or volume < 8000:
@@ -123,10 +185,21 @@ class MultiSignalStrategy:
 
         direction = dir1
 
-        # ✅ Filters
+        # ✅ EXISTING FILTER
         if not self.vwap_trend(price, vwap, direction):
             return
 
+        # ✅ ✅ NEW HIGH ACCURACY FILTERS
+        if self.is_sideways(prices):
+            return
+
+        if not self.is_strong_trend(prices, direction):
+            return
+
+        if self.is_liquidity_trap(prices, direction):
+            return
+
+        # ✅ ORIGINAL FLOW CONTINUES
         if not self.is_pullback(prices, direction):
             return
 
@@ -150,12 +223,11 @@ class MultiSignalStrategy:
         if abs(day_change) < 0.1:
             return
 
-        # ✅ SCORE
         score = self.calculate_score(price, vwap, day_change, m5)
 
         sl, tgt = self.get_trade_levels(price, direction, prices)
 
-        # ✅ ✅ INSTANT TRADE (HIGH SCORE)
+        # ✅ INSTANT TRADE
         if score >= 22:
             message = f"""
 🔥 INSTANT TRADE 🔥
@@ -174,8 +246,7 @@ Target: ₹{tgt}
             self.last_direction[symbol] = direction
             return
 
-
-        # ✅ MID SCORE → STORE
+        # ✅ STORE
         if score >= 15:
             self.candidates.append({
                 "symbol": symbol,
@@ -187,7 +258,7 @@ Target: ₹{tgt}
         self.process_top_signals()
 
 
-    # ✅ ✅ TOP SIGNAL RANKING
+    # ✅ TOP RANKING
     def process_top_signals(self):
 
         if time.time() - self.last_rank_sent < 60:
