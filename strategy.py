@@ -260,4 +260,3 @@ Target: ₹{tgt}
 ⚠️ Risk: {risk}
 """
             send_alert(message, symbol, direction, price, sl, tgt, self.strategy_name)
-``
