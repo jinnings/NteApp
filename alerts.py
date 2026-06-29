@@ -2,13 +2,20 @@ import requests
 import time
 import json
 from config import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
+from datetime import datetime
+import pytz
 
 LOG_FILE = "alerts_log.json"
-COOLDOWN_SECONDS = 300  # 5 minutes
+COOLDOWN_SECONDS = 300
+
+
+# ✅ IST TIME
+def get_ist_time():
+    ist = pytz.timezone("Asia/Kolkata")
+    return datetime.now(ist).strftime('%Y-%m-%d %H:%M:%S')
 
 
 def save_alert(message, symbol=None, direction=None, entry=None, sl=None, target=None, strategy_name=None):
-
     current_time = time.time()
 
     try:
@@ -18,10 +25,10 @@ def save_alert(message, symbol=None, direction=None, entry=None, sl=None, target
         except:
             data = []
 
-        # ✅ ✅ SYSTEM ALERT (must be INSIDE function)
+        # ✅ SYSTEM ALERT
         if symbol is None:
             alert = {
-                "time": time.strftime('%Y-%m-%d %H:%M:%S'),
+                "time": get_ist_time(),
                 "message": message.strip(),
                 "status": "INFO"
             }
@@ -32,33 +39,24 @@ def save_alert(message, symbol=None, direction=None, entry=None, sl=None, target
             with open(LOG_FILE, "w") as f:
                 json.dump(data, f, indent=2)
 
-            return  # ✅ VALID now
+            return
 
-        # ✅ ✅ CHECK EXISTING TRADES
+        # ✅ BLOCK DUPLICATES
         for existing in data:
-
             if existing.get("symbol") != symbol:
                 continue
-
             if existing.get("strategy") != strategy_name:
                 continue
 
-            status = existing.get("status")
-            alert_time = existing.get("timestamp", 0)
-
-            # ❌ Block if active
-            if status == "OPEN":
-                print(f"⛔ Skip {symbol} ({strategy_name}) → active trade exists")
+            if existing.get("status") == "OPEN":
                 return
 
-            # ❌ Block if cooldown running
-            if current_time - alert_time < COOLDOWN_SECONDS:
-                print(f"⏳ Cooldown active for {symbol} ({strategy_name})")
+            if current_time - existing.get("timestamp", 0) < COOLDOWN_SECONDS:
                 return
 
-        # ✅ ✅ ALLOW NEW TRADE
+        # ✅ NEW ALERT
         alert = {
-            "time": time.strftime('%Y-%m-%d %H:%M:%S'),
+            "time": get_ist_time(),   # ✅ IST
             "timestamp": current_time,
             "message": message.strip(),
             "symbol": symbol,
@@ -85,11 +83,10 @@ def send_alert(message, symbol=None, direction=None, entry=None, sl=None, target
 
     save_alert(message, symbol, direction, entry, sl, target, strategy_name)
 
-    # ✅ Telegram optional
+    # ✅ TELEGRAM
     if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-
         try:
+            url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
             requests.post(url, data={
                 "chat_id": TELEGRAM_CHAT_ID,
                 "text": message

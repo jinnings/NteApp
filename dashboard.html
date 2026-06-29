@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Nte app Trading Bot Dashboard</title>
+    <title>Nte App Trading Bot Dashboard</title>
 
     <style>
         body {
@@ -21,7 +21,6 @@
             padding: 12px;
             margin-bottom: 10px;
             border-radius: 10px;
-            box-shadow: 0 0 5px rgba(0,0,0,0.3);
         }
 
         .buy { border-left: 5px solid #22c55e; }
@@ -55,7 +54,7 @@ async function loadAlerts() {
 
         let html = "";
 
-        // ✅ ✅ SYSTEM ALERT (NO UNDEFINED NOW)
+        // ✅ SYSTEM ALERT
         if (!alert.symbol) {
             html = `
                 <div class="alert system">
@@ -65,7 +64,6 @@ async function loadAlerts() {
                 </div>
             `;
         }
-
         else {
             const entry = alert.entry ?? "-";
             const sl = alert.sl ?? "-";
@@ -88,11 +86,9 @@ async function loadAlerts() {
         }
 
         container.innerHTML += html;
-
     });
 }
 
-// refresh every 2 sec
 setInterval(loadAlerts, 2000);
 loadAlerts();
 </script>

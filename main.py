@@ -6,27 +6,24 @@ import random
 import traceback
 
 from flask import Flask, jsonify
-from alerts import send_alert
-from config import MODE, ACCESS_TOKEN
 
+from alerts import send_alert, get_ist_time
+from config import MODE, ACCESS_TOKEN
 from strategy import MultiSignalStrategy
 from mapping import MAPPING
 
 strategy = MultiSignalStrategy()
-
 app = Flask(__name__, static_folder=".")
 
 print("🚀 Bot running ✅")
-send_alert("🤖 BOT STARTED ✅")
+send_alert(f"🤖 BOT STARTED ✅\nTime: {get_ist_time()}")
 
 
-# ✅ HOME
 @app.route("/")
 def home():
     return app.send_static_file("dashboard.html")
 
 
-# ✅ ALERT API
 @app.route("/api/alerts")
 def get_alerts():
     try:
@@ -37,12 +34,11 @@ def get_alerts():
         return jsonify([])
 
 
-# ✅ ✅ ✅ YOUR ORIGINAL WORKING API (UNCHANGED ✅)
 def get_prices_batch(mapping):
     url = "https://api.upstox.com/v2/market-quote/quotes"
     headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
-
     prices = {}
+
     keys = list(mapping.values())
 
     for i in range(0, len(keys), 20):
@@ -60,7 +56,6 @@ def get_prices_batch(mapping):
 
             for _, v in data.get("data", {}).items():
                 symbol = v.get("symbol") or v.get("instrument_key")
-
                 if not symbol:
                     continue
 
@@ -75,7 +70,6 @@ def get_prices_batch(mapping):
     return prices
 
 
-# ✅ ✅ ✅ LIVE BOT (OLD LOGIC INSIDE THREAD ✅)
 def run_bot():
     print("📈 LIVE MODE STARTED")
 
@@ -86,10 +80,6 @@ def run_bot():
             for symbol, d in prices.items():
                 strategy.update(symbol, d["price"], d["volume"])
 
-            # ✅ IMPORTANT (same as old)
-            strategy.process_top_signals()
-
-            # ✅ SAME OUTPUT YOU WANT ✅
             print(f"📊 Scanned: {len(prices)} stocks")
 
         except Exception:
@@ -98,7 +88,6 @@ def run_bot():
         time.sleep(5)
 
 
-# ✅ ✅ TEST MODE
 def generate_test_alerts():
     symbols = ["NIFTY", "BANKNIFTY", "RELIANCE", "TCS", "INFY"]
     strategies = ["BREAKOUT", "SCALPING", "REVERSAL"]
@@ -119,7 +108,6 @@ def generate_test_alerts():
         direction = random.choice(["BUY", "SELL"])
 
         price = base_prices[symbol] + random.randint(-100, 100)
-        volume = random.randint(10000, 50000)
 
         if direction == "BUY":
             sl = price - random.randint(10, 80)
@@ -129,6 +117,7 @@ def generate_test_alerts():
             target = price - random.randint(20, 150)
 
         message = f"""{symbol} {direction} ({strategy_name})
+Time: {get_ist_time()}
 Entry: {price}
 SL: {sl}
 Target: {target}"""
@@ -138,88 +127,11 @@ Target: {target}"""
         time.sleep(5)
 
 
-# ✅ STATUS PRICE
-def get_prices_for_status():
-    if MODE == "LIVE":
-        real = get_prices_batch(MAPPING)
-        return {k: v["price"] for k, v in real.items()}
-    else:
-        return {
-            "NIFTY": random.randint(23400, 23600),
-            "BANKNIFTY": random.randint(51800, 52200),
-            "RELIANCE": random.randint(2950, 3050),
-            "TCS": random.randint(3700, 3900),
-            "INFY": random.randint(1450, 1600),
-        }
-
-
-# ✅ TRADE STATUS TRACKER
-def update_trade_status():
-    while True:
-        try:
-            try:
-                with open("alerts_log.json", "r") as f:
-                    alerts = json.load(f)
-            except:
-                alerts = []
-
-            prices = get_prices_for_status()
-            updated = False
-
-            for alert in alerts:
-                if alert.get("status") != "OPEN":
-                    continue
-
-                symbol = alert.get("symbol")
-                direction = alert.get("direction")
-
-                if symbol not in prices:
-                    continue
-
-                current_price = prices[symbol]
-                target = alert.get("target")
-                sl = alert.get("sl")
-
-                if direction == "BUY":
-                    if current_price >= target:
-                        alert["status"] = "TARGET HIT ✅"
-                        alert["timestamp"] = time.time()
-                        updated = True
-                    elif current_price <= sl:
-                        alert["status"] = "SL HIT ❌"
-                        alert["timestamp"] = time.time()
-                        updated = True
-
-                elif direction == "SELL":
-                    if current_price <= target:
-                        alert["status"] = "TARGET HIT ✅"
-                        alert["timestamp"] = time.time()
-                        updated = True
-                    elif current_price >= sl:
-                        alert["status"] = "SL HIT ❌"
-                        alert["timestamp"] = time.time()
-                        updated = True
-
-            if updated:
-                with open("alerts_log.json", "w") as f:
-                    json.dump(alerts, f, indent=2)
-
-        except Exception as e:
-            print("Status error:", e)
-
-        time.sleep(3)
-
-
-# ✅ ✅ START SYSTEM
 if __name__ == "__main__":
 
     if MODE == "LIVE":
-        print("📈 LIVE MODE ENABLED")
         threading.Thread(target=run_bot, daemon=True).start()
     else:
-        print("🧪 TEST MODE ENABLED")
         threading.Thread(target=generate_test_alerts, daemon=True).start()
-
-    threading.Thread(target=update_trade_status, daemon=True).start()
 
     app.run(host="0.0.0.0", port=5000)
