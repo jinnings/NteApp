@@ -37,7 +37,6 @@
             padding: 15px;
             margin-bottom: 12px;
             border-radius: 10px;
-            transition: 0.2s;
         }
 
         .best {
@@ -115,6 +114,22 @@
 </div>
 
 <script>
+
+// ✅ BACK BUTTON EXIT CONFIRM
+history.pushState(null, null, location.href);
+
+window.onpopstate = function () {
+    const exit = confirm("Do you want to exit the dashboard?");
+    
+    if (exit) {
+        // allow exit
+        window.history.back();
+    } else {
+        // stay on page
+        history.pushState(null, null, location.href);
+    }
+};
+
 
 async function loadAlerts() {
 
@@ -220,6 +235,7 @@ async function loadAlerts() {
     }
 }
 
+// ✅ AUTO REFRESH
 setInterval(loadAlerts, 2000);
 loadAlerts();
 
