@@ -23,15 +23,24 @@ send_alert(f"🤖 BOT STARTED ✅\nTime: {get_ist_time()}")
 def home():
     return app.send_static_file("dashboard.html")
 
+from flask import Flask, jsonify
+import json
+
+app = Flask(__name__)
 
 @app.route("/api/alerts")
 def get_alerts():
     try:
         with open("alerts_log.json", "r") as f:
             data = json.load(f)
-        return jsonify(list(reversed(data)))
     except:
-        return jsonify([])
+        data = []
+
+    return jsonify(data)
+
+
+if __name__ == "__main__":
+    app.run(debug=True)
 
 
 def get_prices_batch(mapping):

@@ -1,7 +1,8 @@
 <!DOCTYPE html>
 <html>
+
 <head>
-    <title>Nte App Trading Bot Dashboard</title>
+    <title>Nte Trading Bot Dashboard</title>
 
     <style>
         body {
@@ -11,26 +12,74 @@
         }
 
         .container {
-            width: 600px;
+            width: 700px;
             margin: auto;
             margin-top: 30px;
         }
 
-        .alert {
-            background: #1e293b;
-            padding: 12px;
-            margin-bottom: 10px;
-            border-radius: 10px;
+        h2 {
+            text-align: center;
         }
 
-        .buy { border-left: 5px solid #22c55e; }
-        .sell { border-left: 5px solid #ef4444; }
-        .system { border-left: 5px solid #3b82f6; }
+        .filters {
+            margin-bottom: 15px;
+        }
+
+        input, select {
+            padding: 8px;
+            margin-right: 8px;
+            border-radius: 6px;
+            border: none;
+        }
+
+        .alert {
+            background: #1e293b;
+            padding: 15px;
+            margin-bottom: 12px;
+            border-radius: 10px;
+            transition: 0.2s;
+        }
+
+        .best {
+            border: 2px solid gold;
+            box-shadow: 0 0 12px gold;
+        }
+
+        .buy { border-left: 6px solid #22c55e; }
+        .sell { border-left: 6px solid #ef4444; }
+        .system { border-left: 6px solid #3b82f6; }
+
+        .line { margin-top: 4px; }
+
+        .highlight {
+            font-weight: bold;
+            color: #38bdf8;
+        }
+
+        .metrics {
+            margin-top: 6px;
+            font-size: 14px;
+        }
 
         .status {
-            margin-top: 5px;
-            font-size: 13px;
-            opacity: 0.8;
+            margin-top: 8px;
+            font-size: 12px;
+            opacity: 0.7;
+        }
+
+        .tag {
+            padding: 2px 6px;
+            border-radius: 6px;
+            font-size: 11px;
+        }
+
+        .low { background: #22c55e; color: black; }
+        .medium { background: #facc15; color: black; }
+        .high { background: #ef4444; color: white; }
+
+        .best-label {
+            color: gold;
+            font-weight: bold;
         }
     </style>
 </head>
@@ -38,59 +87,142 @@
 <body>
 
 <div class="container">
-    <h2>📊 Nte Alerts</h2>
+    <h2>📊 Nte Trading Alerts</h2>
+
+    <div class="filters">
+
+        🔎 <input type="text" id="searchBox" placeholder="Stock" onkeyup="loadAlerts()">
+
+        📊 <select id="confidenceFilter" onchange="loadAlerts()">
+            <option value="ALL">All Confidence</option>
+            <option value="80">> 80%</option>
+        </select>
+
+        ⚠️ <select id="riskFilter" onchange="loadAlerts()">
+            <option value="ALL">All Risk</option>
+            <option value="LOW">LOW Only</option>
+        </select>
+
+        🔁 <select id="directionFilter" onchange="loadAlerts()">
+            <option value="ALL">BUY + SELL</option>
+            <option value="BUY">BUY Only</option>
+            <option value="SELL">SELL Only</option>
+        </select>
+
+    </div>
+
     <div id="alerts"></div>
 </div>
 
 <script>
+
 async function loadAlerts() {
+
     const res = await fetch("/api/alerts");
     const data = await res.json();
 
     const container = document.getElementById("alerts");
+
+    const search = document.getElementById("searchBox").value.toUpperCase();
+    const confFilter = document.getElementById("confidenceFilter").value;
+    const riskFilter = document.getElementById("riskFilter").value;
+    const dirFilter = document.getElementById("directionFilter").value;
+
     container.innerHTML = "";
+
+    data.reverse();
+
+    // ✅ FIND BEST TRADE
+    let bestTrade = null;
+
+    data.forEach(a => {
+        if (!a.symbol) return;
+
+        if (a.risk === "LOW" && a.trend === "STRONG") {
+            if (!bestTrade || a.confidence > bestTrade.confidence) {
+                bestTrade = a;
+            }
+        }
+    });
 
     data.forEach(alert => {
 
-        let html = "";
+        if (!alert.symbol) return;
 
-        // ✅ SYSTEM ALERT
-        if (!alert.symbol) {
-            html = `
-                <div class="alert system">
-                    <b>ℹ️ SYSTEM</b><br>
-                    ${alert.message}
-                    <div class="status">${alert.time}</div>
+        const symbol = alert.symbol.toUpperCase();
+        const direction = alert.direction;
+        const confidence = alert.confidence || 0;
+        const risk = alert.risk || "";
+
+        // ✅ FILTERS
+        if (!symbol.includes(search)) return;
+        if (confFilter === "80" && confidence < 80) return;
+        if (riskFilter !== "ALL" && risk !== riskFilter) return;
+        if (dirFilter !== "ALL" && direction !== dirFilter) return;
+
+        const entry = alert.entry ?? "-";
+        const sl = alert.sl ?? "-";
+        const target = alert.target ?? "-";
+
+        let cls = direction === "BUY" ? "buy" : "sell";
+
+        let riskClass = "medium";
+        if (risk === "LOW") riskClass = "low";
+        if (risk === "HIGH") riskClass = "high";
+
+        // ✅ BEST CHECK
+        let isBest = bestTrade && alert.symbol === bestTrade.symbol;
+
+        const html = `
+            <div class="alert ${cls} ${isBest ? "best" : ""}">
+
+                ${isBest ? `<div class="best-label">⭐ BEST TRADE</div>` : ""}
+
+                <div class="line">
+                    <b>${symbol} → ${direction}</b>
                 </div>
-            `;
-        }
-        else {
-            const entry = alert.entry ?? "-";
-            const sl = alert.sl ?? "-";
-            const target = alert.target ?? "-";
-            const direction = alert.direction ?? "";
 
-            let cls = direction === "BUY" ? "buy" : "sell";
-
-            html = `
-                <div class="alert ${cls}">
-                    <b>${alert.symbol} ${direction}</b><br>
-                    Entry: ${entry} <br>
-                    SL: ${sl} <br>
-                    Target: ${target}
-                    <div class="status">
-                        ${alert.status || ""} | ${alert.time}
-                    </div>
+                <div class="line highlight">
+                    Strategy: ${alert.strategy}
                 </div>
-            `;
-        }
+
+                <div class="line">
+                    Entry: ₹${entry} |
+                    SL: ₹${sl} |
+                    Target: ₹${target}
+                </div>
+
+                <div class="metrics">
+                    📊 Confidence: <b>${confidence}%</b> |
+                    📈 Trend: <b>${alert.trend}</b> |
+                    ⚠️ Risk:
+                    <span class="tag ${riskClass}">
+                        ${risk}
+                    </span>
+                </div>
+
+                <div class="status">
+                    ${alert.time}
+                </div>
+
+            </div>
+        `;
 
         container.innerHTML += html;
     });
+
+    if (container.innerHTML === "") {
+        container.innerHTML = `
+            <div class="alert system">
+                ❌ No matching alerts
+            </div>
+        `;
+    }
 }
 
 setInterval(loadAlerts, 2000);
 loadAlerts();
+
 </script>
 
 </body>
