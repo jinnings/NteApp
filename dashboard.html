@@ -1,79 +1,100 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Trading Alerts Dashboard</title>
+    <title>Nte app Trading Bot Dashboard</title>
 
     <style>
         body {
-            font-family: Arial;
             background: #0f172a;
             color: #e2e8f0;
-            padding: 20px;
+            font-family: Arial;
         }
 
-        .card {
-            padding: 15px;
-            margin-bottom: 12px;
+        .container {
+            width: 600px;
+            margin: auto;
+            margin-top: 30px;
+        }
+
+        .alert {
+            background: #1e293b;
+            padding: 12px;
+            margin-bottom: 10px;
             border-radius: 10px;
+            box-shadow: 0 0 5px rgba(0,0,0,0.3);
         }
 
-        .buy { background: #22c55e; }
-        .sell { background: #ef4444; }
-        .neutral { background: #64748b; } /* ✅ GREY */
+        .buy { border-left: 5px solid #22c55e; }
+        .sell { border-left: 5px solid #ef4444; }
+        .system { border-left: 5px solid #3b82f6; }
+
+        .status {
+            margin-top: 5px;
+            font-size: 13px;
+            opacity: 0.8;
+        }
     </style>
 </head>
 
 <body>
 
-<h1>📊 Trading Alerts</h1>
-<div id="alerts-container">Loading...</div>
+<div class="container">
+    <h2>📊 Nte Alerts</h2>
+    <div id="alerts"></div>
+</div>
 
 <script>
-function convertToIST(utcTime) {
-    const date = new Date(utcTime + " UTC");
+async function loadAlerts() {
+    const res = await fetch("/api/alerts");
+    const data = await res.json();
 
-    return date.toLocaleString("en-IN", {
-        timeZone: "Asia/Kolkata"
+    const container = document.getElementById("alerts");
+    container.innerHTML = "";
+
+    data.forEach(alert => {
+
+        let html = "";
+
+        // ✅ ✅ SYSTEM ALERT (NO UNDEFINED NOW)
+        if (!alert.symbol) {
+            html = `
+                <div class="alert system">
+                    <b>ℹ️ SYSTEM</b><br>
+                    ${alert.message}
+                    <div class="status">${alert.time}</div>
+                </div>
+            `;
+        }
+
+        else {
+            const entry = alert.entry ?? "-";
+            const sl = alert.sl ?? "-";
+            const target = alert.target ?? "-";
+            const direction = alert.direction ?? "";
+
+            let cls = direction === "BUY" ? "buy" : "sell";
+
+            html = `
+                <div class="alert ${cls}">
+                    <b>${alert.symbol} ${direction}</b><br>
+                    Entry: ${entry} <br>
+                    SL: ${sl} <br>
+                    Target: ${target}
+                    <div class="status">
+                        ${alert.status || ""} | ${alert.time}
+                    </div>
+                </div>
+            `;
+        }
+
+        container.innerHTML += html;
+
     });
 }
 
-function loadAlerts() {
-    fetch("/api/alerts")
-        .then(res => res.json())
-        .then(data => {
-
-            let html = "";
-
-            data.forEach(alert => {
-
-                let cls = "neutral";
-
-                if (alert.status !== "OPEN") {
-                    cls = "neutral"; // ✅ CLOSED = GREY
-                } else {
-                    if (alert.direction === "BUY") cls = "buy";
-                    else if (alert.direction === "SELL") cls = "sell";
-                }
-
-              html += `
-    <div class="card ${cls}">
-        <div>${convertToIST(alert.time)}</div>
-        <div><b>${alert.symbol} ${alert.direction}</b></div>
-        <div>Strategy: ${alert.strategy}</div>
-        <div>Entry: ${alert.entry}</div>
-        <div>SL: ${alert.sl}</div>
-        <div>Target: ${alert.target}</div>
-        <div><b>Status: ${alert.status}</b></div>
-    </div>
-`;
-            });
-
-            document.getElementById("alerts-container").innerHTML = html;
-        });
-}
-
+// refresh every 2 sec
+setInterval(loadAlerts, 2000);
 loadAlerts();
-setInterval(loadAlerts, 3000);
 </script>
 
 </body>
