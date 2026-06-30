@@ -22,7 +22,7 @@ class MultiSignalStrategy:
         self.daily_data[symbol]["close"].append(close)
         self.daily_data[symbol]["volume"].append(volume)
 
-    # ✅ RELAXED HTF FILTER (used only after warmup)
+    # ✅ HTF FILTER (USED AFTER WARMUP)
     def passes_htf_filter(self, symbol):
         data = self.daily_data[symbol]
         closes = list(data["close"])
@@ -42,12 +42,13 @@ class MultiSignalStrategy:
 
         return True
 
-    # ✅ SUPPORT FUNCTIONS
+    # ✅ DAY CHANGE
     def get_day_change(self, symbol, price):
         if symbol not in self.day_open:
             self.day_open[symbol] = price
         return ((price - self.day_open[symbol]) / self.day_open[symbol]) * 100
 
+    # ✅ TRADE LEVELS
     def get_trade_levels(self, price, direction, prices):
         recent = prices[-8:]
 
@@ -62,7 +63,7 @@ class MultiSignalStrategy:
 
         return round(sl, 2), round(target, 2)
 
-    # ✅ SCORE SYSTEM
+    # ✅ SCORE
     def calculate_score(self, price, vwap, day_change, momentum):
         score = 0
 
@@ -83,9 +84,22 @@ class MultiSignalStrategy:
         confidence += min(abs(momentum) * 200, 10)
         return min(int(confidence), 100)
 
-    # ✅ TREND
+    # ✅ SAFE TREND (FIXED CRASH)
     def get_trend(self, prices):
-        move = abs(prices[-1] - prices[-10]) / prices[-10]
+
+        if len(prices) < 2:
+            return "MEDIUM"
+
+        if len(prices) < 10:
+            base = prices[0]
+        else:
+            base = prices[-10]
+
+        if base == 0:
+            return "MEDIUM"
+
+        move = abs(prices[-1] - base) / base
+
         return "STRONG" if move > 0.003 else "MEDIUM"
 
     # ✅ RISK
@@ -109,7 +123,7 @@ class MultiSignalStrategy:
     # ✅ MAIN ENGINE
     def update(self, symbol, price, volume):
 
-        # ✅ LOWERED VOLUME FILTER
+        # ✅ VOLUME FILTER
         if volume < 1500:
             print(f"{symbol}: Volume failed ({volume})")
             return
@@ -122,30 +136,39 @@ class MultiSignalStrategy:
 
         print(f"{symbol}: Prices stored = {price_len}")
 
-        # ✅ QUICK START (warmup mode)
-        if price_len < 8:
-            print(f"{symbol}: Waiting for minimum data")
+        # ✅ MINIMUM DATA SAFETY
+        if price_len < 4:
+            print(f"{symbol}: Not enough for momentum")
             return
 
+        # ✅ VWAP
         vwap = sum(prices) / len(prices)
 
-        # ✅ % MOMENTUM
-        m1 = (prices[-1] - prices[-3]) / prices[-3]
-        m5 = (prices[-1] - prices[-6]) / prices[-6]
+        # ✅ SAFE MOMENTUM
+        if price_len >= 3:
+            m1 = (prices[-1] - prices[-3]) / prices[-3]
+        else:
+            m1 = 0
+
+        if price_len >= 6:
+            m5 = (prices[-1] - prices[-6]) / prices[-6]
+        else:
+            m5 = m1
 
         direction = "BUY" if m1 > 0 else "SELL"
 
         day_change = self.get_day_change(symbol, price)
 
-        # ✅ WARMUP MODE (FAST SIGNALS)
+        # ✅ WARMUP MODE
         if price_len < 15:
             score = self.calculate_score(price, vwap, day_change, m5)
 
             if score < 8:
                 print(f"{symbol}: Warmup score too low ({score})")
                 return
+
         else:
-            # ✅ APPLY FULL FILTER AFTER DATA BUILDS
+            # ✅ FULL FILTER MODE
             if not self.passes_htf_filter(symbol):
                 print(f"{symbol}: HTF failed")
                 return
@@ -156,8 +179,8 @@ class MultiSignalStrategy:
                 print(f"{symbol}: Score too low ({score})")
                 return
 
+        # ✅ LEVELS + METRICS
         sl, tgt = self.get_trade_levels(price, direction, prices)
-
         confidence = self.calculate_confidence(score, day_change, m5)
         trend = self.get_trend(prices)
         risk = self.get_risk(price, sl, confidence, trend)
@@ -170,6 +193,7 @@ class MultiSignalStrategy:
         else:
             trade_type = "🔥 TOP TRADE"
 
+        # ✅ MESSAGE
         message = f"""
 {trade_type}
 Strategy: {self.strategy_name}
@@ -189,6 +213,7 @@ Target: ₹{tgt}
 
         print(f"{symbol}: ✅ SIGNAL ({direction}) Score={score}")
 
+        # ✅ SEND ALERT
         send_alert(
             message,
             symbol,
