@@ -12,10 +12,10 @@ from config import MODE, ACCESS_TOKEN
 from strategy import MultiSignalStrategy
 from mapping import MAPPING
 
+
 # ✅ INIT
 strategy = MultiSignalStrategy()
 app = Flask(__name__, static_folder=".")
-
 
 print("🚀 Bot running ✅")
 send_alert(f"🤖 BOT STARTED ✅\nTime: {get_ist_time()}")
@@ -82,6 +82,50 @@ def get_prices_batch(mapping):
 
 
 # ==============================
+# ✅ MARKET TREND DETECTION
+# ==============================
+
+# 👉 IMPORTANT: Replace with actual NIFTY symbol in your mapping
+NIFTY_SYMBOL = None
+
+for k, v in MAPPING.items():
+    if "NIFTY" in k.upper():
+        NIFTY_SYMBOL = v
+        break
+
+
+def get_market_trend(prices):
+    """Simple trend: price vs average (pseudo VWAP)"""
+
+    if not NIFTY_SYMBOL or NIFTY_SYMBOL not in prices:
+        return "SIDEWAYS"
+
+    p = prices[NIFTY_SYMBOL]["price"]
+
+    # store mini history inside function attribute
+    if not hasattr(get_market_trend, "history"):
+        get_market_trend.history = []
+
+    history = get_market_trend.history
+    history.append(p)
+
+    if len(history) > 20:
+        history.pop(0)
+
+    if len(history) < 5:
+        return "SIDEWAYS"
+
+    avg = sum(history) / len(history)
+
+    if p > avg:
+        return "UP"
+    elif p < avg:
+        return "DOWN"
+    else:
+        return "SIDEWAYS"
+
+
+# ==============================
 # ✅ LIVE BOT
 # ==============================
 
@@ -91,6 +135,12 @@ def run_bot():
     while True:
         try:
             prices = get_prices_batch(MAPPING)
+
+            # ✅ UPDATE MARKET TREND
+            market_trend = get_market_trend(prices)
+            strategy.set_market_trend(market_trend)
+
+            print(f"📊 Market Trend: {market_trend}")
 
             for symbol, d in prices.items():
                 strategy.update(symbol, d["price"], d["volume"])
