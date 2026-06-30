@@ -5,7 +5,7 @@ from alerts import send_alert, get_ist_time
 class MultiSignalStrategy:
 
     def __init__(self):
-        self.strategy_name = "STB (NteScalping)"
+        self.strategy_name = "STB (NteScalping PRO)"
 
         self.price_history = defaultdict(lambda: deque(maxlen=100))
         self.volume_history = defaultdict(lambda: deque(maxlen=20))
@@ -22,25 +22,21 @@ class MultiSignalStrategy:
         self.daily_data[symbol]["close"].append(close)
         self.daily_data[symbol]["volume"].append(volume)
 
-    # ✅ RELAXED HTF FILTER
+    # ✅ RELAXED HTF FILTER (used only after warmup)
     def passes_htf_filter(self, symbol):
         data = self.daily_data[symbol]
         closes = list(data["close"])
         volumes = list(data["volume"])
 
-        # ✅ Reduced requirement
-        if len(closes) < 60 or len(volumes) < 5:
+        if len(closes) < 40:
             return False
 
-        # ✅ Softer breakout condition (2% instead of 5%)
         if max(closes[-5:]) <= max(closes[:-6]) * 1.02:
             return False
 
-        # ✅ Volume slightly above average
         if volumes[-1] < (sum(volumes[-5:]) / 5) * 0.9:
             return False
 
-        # ✅ Last candle bullish
         if closes[-1] <= closes[-2]:
             return False
 
@@ -53,26 +49,26 @@ class MultiSignalStrategy:
         return ((price - self.day_open[symbol]) / self.day_open[symbol]) * 100
 
     def get_trade_levels(self, price, direction, prices):
-        recent = prices[-10:]
+        recent = prices[-8:]
 
         if direction == "BUY":
             sl = min(recent)
-            risk = max(price - sl, price * 0.003)
+            risk = max(price - sl, price * 0.0025)
             target = price + (risk * 2)
         else:
             sl = max(recent)
-            risk = max(sl - price, price * 0.003)
+            risk = max(sl - price, price * 0.0025)
             target = price - (risk * 2)
 
         return round(sl, 2), round(target, 2)
 
-    # ✅ SCORE SYSTEM (TUNED)
+    # ✅ SCORE SYSTEM
     def calculate_score(self, price, vwap, day_change, momentum):
         score = 0
 
         score += min(abs(day_change) * 3, 12)
 
-        if abs(momentum) > 0.002:
+        if abs(momentum) > 0.0015:
             score += min(abs(momentum) * 200, 10)
 
         score += 8 if price > vwap else 4
@@ -89,7 +85,7 @@ class MultiSignalStrategy:
 
     # ✅ TREND
     def get_trend(self, prices):
-        move = abs(prices[-1] - prices[-15]) / prices[-15]
+        move = abs(prices[-1] - prices[-10]) / prices[-10]
         return "STRONG" if move > 0.003 else "MEDIUM"
 
     # ✅ RISK
@@ -98,12 +94,11 @@ class MultiSignalStrategy:
 
         if pct < 0.003:
             risk = "LOW"
-        elif pct < 0.007:
+        elif pct < 0.006:
             risk = "MEDIUM"
         else:
             risk = "HIGH"
 
-        # Adjust risk dynamically
         if confidence >= 85 and trend == "STRONG":
             risk = "LOW"
         elif confidence < 60:
@@ -114,43 +109,52 @@ class MultiSignalStrategy:
     # ✅ MAIN ENGINE
     def update(self, symbol, price, volume):
 
-        # ✅ Reduced volume filter
-        if volume < 3000:
-            print(f"{symbol}: Volume filter failed ({volume})")
+        # ✅ LOWERED VOLUME FILTER
+        if volume < 1500:
+            print(f"{symbol}: Volume failed ({volume})")
             return
 
         self.price_history[symbol].append(price)
         self.volume_history[symbol].append(volume)
 
         prices = list(self.price_history[symbol])
+        price_len = len(prices)
 
-        if len(prices) < 20:
-            print(f"{symbol}: Not enough price data")
+        print(f"{symbol}: Prices stored = {price_len}")
+
+        # ✅ QUICK START (warmup mode)
+        if price_len < 8:
+            print(f"{symbol}: Waiting for minimum data")
             return
 
-        # ✅ HTF FILTER
-        if not self.passes_htf_filter(symbol):
-            print(f"{symbol}: HTF filter failed")
-            return
-
-        # ✅ VWAP
         vwap = sum(prices) / len(prices)
 
-        # ✅ % MOMENTUM (FIXED)
+        # ✅ % MOMENTUM
         m1 = (prices[-1] - prices[-3]) / prices[-3]
-        m5 = (prices[-1] - prices[-10]) / prices[-10]
+        m5 = (prices[-1] - prices[-6]) / prices[-6]
 
         direction = "BUY" if m1 > 0 else "SELL"
 
         day_change = self.get_day_change(symbol, price)
 
-        # ✅ SCORE
-        score = self.calculate_score(price, vwap, day_change, m5)
+        # ✅ WARMUP MODE (FAST SIGNALS)
+        if price_len < 15:
+            score = self.calculate_score(price, vwap, day_change, m5)
 
-        # ✅ Reduced threshold
-        if score < 10:
-            print(f"{symbol}: Score too low ({score})")
-            return
+            if score < 8:
+                print(f"{symbol}: Warmup score too low ({score})")
+                return
+        else:
+            # ✅ APPLY FULL FILTER AFTER DATA BUILDS
+            if not self.passes_htf_filter(symbol):
+                print(f"{symbol}: HTF failed")
+                return
+
+            score = self.calculate_score(price, vwap, day_change, m5)
+
+            if score < 10:
+                print(f"{symbol}: Score too low ({score})")
+                return
 
         sl, tgt = self.get_trade_levels(price, direction, prices)
 
@@ -158,7 +162,7 @@ class MultiSignalStrategy:
         trend = self.get_trend(prices)
         risk = self.get_risk(price, sl, confidence, trend)
 
-        # ✅ TRADE TYPE LOGIC
+        # ✅ TRADE TYPE
         if score >= 20 and risk == "LOW":
             trade_type = "🔥 INSTANT PREMIUM"
         elif score >= 20:
@@ -166,7 +170,6 @@ class MultiSignalStrategy:
         else:
             trade_type = "🔥 TOP TRADE"
 
-        # ✅ ALERT MESSAGE
         message = f"""
 {trade_type}
 Strategy: {self.strategy_name}
@@ -184,9 +187,8 @@ Target: ₹{tgt}
 ⚠️ Risk: {risk}
 """
 
-        print(f"{symbol}: ✅ SIGNAL GENERATED ({direction}, Score={score})")
+        print(f"{symbol}: ✅ SIGNAL ({direction}) Score={score}")
 
-        # ✅ SEND ALERT
         send_alert(
             message,
             symbol,
