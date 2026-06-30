@@ -16,35 +16,11 @@ class MultiSignalStrategy:
         })
 
         self.day_open = {}
+        self.market_trend = "SIDEWAYS"
 
-        # ✅ YOU MUST UPDATE THIS FROM MAIN LOOP
-        self.market_trend = "SIDEWAYS"  # "UP" / "DOWN"
-
-    # ✅ SET MARKET TREND (CALL THIS FROM MAIN.PY)
+    # ✅ SET MARKET TREND
     def set_market_trend(self, trend):
         self.market_trend = trend
-
-    # ✅ DAILY DATA
-    def update_daily(self, symbol, close, volume):
-        self.daily_data[symbol]["close"].append(close)
-        self.daily_data[symbol]["volume"].append(volume)
-
-    # ✅ HTF FILTER
-    def passes_htf_filter(self, symbol):
-        data = self.daily_data[symbol]
-        closes = list(data["close"])
-        volumes = list(data["volume"])
-
-        if len(closes) < 40:
-            return False
-
-        if max(closes[-5:]) <= max(closes[:-6]) * 1.02:
-            return False
-
-        if volumes[-1] < (sum(volumes[-5:]) / 5):
-            return False
-
-        return True
 
     # ✅ DAY CHANGE
     def get_day_change(self, symbol, price):
@@ -52,7 +28,7 @@ class MultiSignalStrategy:
             self.day_open[symbol] = price
         return ((price - self.day_open[symbol]) / self.day_open[symbol]) * 100
 
-    # ✅ REAL VWAP (FIXED)
+    # ✅ REAL VWAP
     def calculate_vwap(self, prices, volumes):
         total_pv = sum(p * v for p, v in zip(prices, volumes))
         total_vol = sum(volumes)
@@ -76,14 +52,12 @@ class MultiSignalStrategy:
     # ✅ SCORE
     def calculate_score(self, price, vwap, day_change, momentum):
         score = 0
-
         score += min(abs(day_change) * 3, 12)
 
         if abs(momentum) > 0.0015:
             score += min(abs(momentum) * 200, 10)
 
         score += 10 if price > vwap else 2
-
         return int(score)
 
     # ✅ CONFIDENCE
@@ -94,33 +68,36 @@ class MultiSignalStrategy:
         confidence += min(abs(momentum) * 200, 10)
         return min(int(confidence), 100)
 
-    # ✅ SAFE TREND
+    # ✅ TREND
     def get_trend(self, prices):
         if len(prices) < 2:
             return "MEDIUM"
 
         base = prices[0] if len(prices) < 10 else prices[-10]
-
         if base == 0:
             return "MEDIUM"
 
         move = abs(prices[-1] - base) / base
-
         return "STRONG" if move > 0.003 else "MEDIUM"
 
-    # ✅ MARKET FILTER (CRITICAL)
-    def market_ok(self, direction):
-        if self.market_trend == "UP" and direction == "BUY":
-            return True
-        if self.market_trend == "DOWN" and direction == "SELL":
-            return True
-        return False
+    # ✅ SMART MARKET BIAS (FIXED)
+    def market_bias(self, direction):
 
-    # ✅ VOLUME SPIKE FILTER
+        if self.market_trend == "SIDEWAYS":
+            return "FREE"
+
+        if self.market_trend == "UP" and direction == "BUY":
+            return "STRONG"
+
+        if self.market_trend == "DOWN" and direction == "SELL":
+            return "STRONG"
+
+        return "WEAK"
+
+    # ✅ VOLUME SPIKE
     def has_volume_spike(self, volumes):
         if len(volumes) < 5:
-            return True  # allow in warmup
-
+            return True
         avg = sum(volumes[-5:]) / 5
         return volumes[-1] > avg * 1.2
 
@@ -135,43 +112,39 @@ class MultiSignalStrategy:
 
         prices = list(self.price_history[symbol])
         volumes = list(self.volume_history[symbol])
-
         price_len = len(prices)
 
         if price_len < 4:
             return
 
-        # ✅ REAL VWAP
         vwap = self.calculate_vwap(prices, volumes)
 
-        # ✅ MOMENTUM
         m1 = (prices[-1] - prices[-3]) / prices[-3] if price_len >= 3 else 0
         m5 = (prices[-1] - prices[-6]) / prices[-6] if price_len >= 6 else m1
 
         direction = "BUY" if m1 > 0 else "SELL"
-
-        # ✅ MARKET FILTER
-        if not self.market_ok(direction):
-            print(f"{symbol}: Market filter blocked")
-            return
-
-        # ✅ VOLUME SPIKE
-        if not self.has_volume_spike(volumes):
-            print(f"{symbol}: No volume spike")
-            return
-
         day_change = self.get_day_change(symbol, price)
 
-        # ✅ HTF after warmup
-        if price_len >= 15:
-            if not self.passes_htf_filter(symbol):
-                print(f"{symbol}: HTF failed")
-                return
-
+        # ✅ BASE SCORE
         score = self.calculate_score(price, vwap, day_change, m5)
 
+        # ✅ APPLY MARKET BIAS (KEY FIX)
+        bias = self.market_bias(direction)
+
+        if bias == "WEAK":
+            score -= 3
+            print(f"{symbol}: Against market trend (penalty)")
+        elif bias == "STRONG":
+            score += 2
+        elif bias == "FREE":
+            score += 1
+
+        # ✅ VOLUME CHECK
+        if not self.has_volume_spike(volumes):
+            return
+
+        # ✅ FINAL FILTER
         if score < 12:
-            print(f"{symbol}: Score too low ({score})")
             return
 
         sl, tgt = self.get_trade_levels(price, direction, prices)
@@ -179,7 +152,6 @@ class MultiSignalStrategy:
         trend = self.get_trend(prices)
         risk = self.get_risk(price, sl, confidence, trend)
 
-        # ✅ TRADE TYPE
         if score >= 22 and risk == "LOW":
             trade_type = "🔥 PREMIUM"
         elif score >= 18:
@@ -204,7 +176,7 @@ Target: ₹{tgt}
 ⚠️ Risk: {risk}
 """
 
-        print(f"{symbol}: ✅ PROFIT SIGNAL ({direction}) Score={score}")
+        print(f"{symbol}: ✅ SIGNAL ({direction}) Score={score}")
 
         send_alert(
             message,
@@ -224,15 +196,8 @@ Target: ₹{tgt}
         pct = abs(price - sl) / price
 
         if pct < 0.003:
-            risk = "LOW"
+            return "LOW"
         elif pct < 0.006:
-            risk = "MEDIUM"
+            return "MEDIUM"
         else:
-            risk = "HIGH"
-
-        if confidence >= 85 and trend == "STRONG":
-            risk = "LOW"
-        elif confidence < 60:
-            risk = "HIGH"
-
-        return risk
+            return "HIGH"
