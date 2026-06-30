@@ -199,4 +199,3 @@ Target: ₹{tgt}
             trend,
             risk
         )
-``
