@@ -18,9 +18,14 @@ from mapping import MAPPING
 # ==============================
 
 strategy = MultiSignalStrategy()
-app = Flask(__name__, static_folder=".")
+
+app = Flask(
+    __name__,
+    static_folder="."
+)
 
 print("🚀 Bot running ✅")
+
 send_alert(
     f"🤖 BOT STARTED ✅\nTime: {get_ist_time()}"
 )
@@ -37,9 +42,11 @@ def home():
 
 @app.route("/api/alerts")
 def get_alerts():
+
     try:
         with open("alerts_log.json", "r") as f:
             data = json.load(f)
+
     except:
         data = []
 
@@ -67,6 +74,7 @@ def get_prices_batch(mapping):
         batch = keys[i:i + 20]
 
         try:
+
             res = requests.get(
                 url,
                 headers=headers,
@@ -94,7 +102,10 @@ def get_prices_batch(mapping):
                 }
 
         except Exception as e:
-            print(f"❌ Batch Error: {e}")
+
+            print(
+                f"❌ Batch Error : {e}"
+            )
 
     return prices
 
@@ -103,43 +114,46 @@ def get_prices_batch(mapping):
 # ✅ MARKET TREND
 # ==============================
 
-NIFTY_SYMBOL = None
-
-for k, v in MAPPING.items():
-    if "NIFTY" in k.upper():
-        NIFTY_SYMBOL = v
-        break
+market_history = {}
 
 
 def get_market_trend(prices):
 
-    if not NIFTY_SYMBOL:
+    global market_history
+
+    advances = 0
+    declines = 0
+
+    for symbol, data in prices.items():
+
+        current_price = data.get("price")
+
+        if current_price is None:
+            continue
+
+        previous_price = market_history.get(symbol)
+
+        if previous_price is not None:
+
+            if current_price > previous_price:
+                advances += 1
+
+            elif current_price < previous_price:
+                declines += 1
+
+        market_history[symbol] = current_price
+
+    total = advances + declines
+
+    if total == 0:
         return "SIDEWAYS"
 
-    if NIFTY_SYMBOL not in prices:
-        return "SIDEWAYS"
+    advance_ratio = advances / total
 
-    p = prices[NIFTY_SYMBOL]["price"]
-
-    if not hasattr(get_market_trend, "history"):
-        get_market_trend.history = []
-
-    history = get_market_trend.history
-
-    history.append(p)
-
-    if len(history) > 20:
-        history.pop(0)
-
-    if len(history) < 5:
-        return "SIDEWAYS"
-
-    avg = sum(history) / len(history)
-
-    if p > avg:
+    if advance_ratio >= 0.60:
         return "UP"
 
-    if p < avg:
+    elif advance_ratio <= 0.40:
         return "DOWN"
 
     return "SIDEWAYS"
@@ -161,7 +175,9 @@ def run_bot():
 
             prices = get_prices_batch(MAPPING)
 
-            market_trend = get_market_trend(prices)
+            market_trend = get_market_trend(
+                prices
+            )
 
             strategy.set_market_trend(
                 market_trend
@@ -169,20 +185,31 @@ def run_bot():
 
             for symbol, d in prices.items():
 
-                strategy.update(
-                    symbol,
-                    d["price"],
-                    d["volume"]
-                )
+                try:
+
+                    strategy.update(
+                        symbol,
+                        d["price"],
+                        d["volume"]
+                    )
+
+                except Exception as e:
+
+                    print(
+                        f"⚠️ Strategy Error [{symbol}] : {e}"
+                    )
 
             print(
                 f"📊 {get_ist_time()} | "
-                f"Trend: {market_trend} | "
+                f"Market Trend: {market_trend} | "
                 f"Scanned: {len(prices)} stocks"
             )
 
         except Exception:
-            print(traceback.format_exc())
+
+            print(
+                traceback.format_exc()
+            )
 
         elapsed = time.time() - start_time
 
@@ -215,7 +242,9 @@ def generate_test_alerts():
 
     while True:
 
-        symbol = random.choice(symbols)
+        symbol = random.choice(
+            symbols
+        )
 
         direction = random.choice(
             ["BUY", "SELL"]
@@ -227,9 +256,12 @@ def generate_test_alerts():
         )
 
         if direction == "BUY":
+
             sl = price - 20
             target = price + 40
+
         else:
+
             sl = price + 20
             target = price - 40
 
@@ -284,12 +316,14 @@ Target: ₹{target}
 if __name__ == "__main__":
 
     if MODE == "LIVE":
+
         threading.Thread(
             target=run_bot,
             daemon=True
         ).start()
 
     else:
+
         threading.Thread(
             target=generate_test_alerts,
             daemon=True
