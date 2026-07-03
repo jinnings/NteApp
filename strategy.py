@@ -30,7 +30,7 @@ class MultiSignalStrategy:
 
     def already_sent_recent(self, symbol, direction):
         key = f"{symbol}_{direction}"
-        return key in self.signal_history and time.time() - self.signal_history[key] < self.SIGNAL_COOLDOWN
+      return key in self.signal_history and time.time() - self.signal_history[key] < self.SIGNAL_COOLDOWN
 
     def get_day_change(self, symbol, price):
         if symbol not in self.day_open:
@@ -39,7 +39,7 @@ class MultiSignalStrategy:
 
     def is_volume_increasing(self, symbol):
         vols = list(self.volume_history[symbol])
-        return len(vols) >= 3 and vols[-1] > vols[-2] > vols[-3]
+return len(vols) >= 3 and vols[-1] > vols[-2] > vols[-3]
 
     def confirm_candle(self, prices, direction):
         if len(prices) < 5:
