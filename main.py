@@ -64,11 +64,11 @@ while True:
 
     try:
 
-        print("Mapping Count:", len(MAPPING))
+        print(f"📋 Mapping Count: {len(MAPPING)}")
 
         prices = get_prices_batch(MAPPING)
 
-        print("API Returned:", len(prices))
+        print(f"✅ API Returned: {len(prices)}")
 
         for instrument_key, d in prices.items():
 
@@ -81,25 +81,39 @@ while True:
                 instrument_key
             )
 
+            price = d.get("price")
+            volume = d.get("volume", 0)
+
+            if price is None:
+                continue
+
+            # ✅ Original Strategy
             multi_strategy.update(
                 symbol,
-                d["price"],
-                d["volume"]
+                price,
+                volume
             )
 
+            # ✅ Pullback Strategy
             pullback_strategy.update(
                 symbol,
-                d["price"],
-                d["volume"]
+                price,
+                volume
             )
 
+        # ✅ Top Ranked Signals
         multi_strategy.process_top_signals()
 
         print(
-            f"📊 Scanned: {len(prices)} stocks"
+            f"📊 Scanned {len(prices)} Stocks | {time.strftime('%H:%M:%S')}"
         )
 
     except Exception:
-        print(traceback.format_exc())
 
-time.sleep(15)
+        print(
+            "❌ ERROR\n",
+            traceback.format_exc()
+        )
+
+    # ✅ Wait before next scan
+    time.sleep(15)
