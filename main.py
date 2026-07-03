@@ -47,17 +47,9 @@ def get_prices_batch(mapping):
 
             data = res.json()
 
-            for _, v in data.get("data", {}).items():
+            for instrument_key, v in data.get("data", {}).items():
 
-                symbol = (
-                    v.get("symbol")
-                    or v.get("instrument_key")
-                )
-
-                if not symbol:
-                    continue
-
-                prices[symbol] = {
+                prices[instrument_key] = {
                     "price": v.get("last_price"),
                     "volume": v.get("volume", 0)
                 }
@@ -72,9 +64,22 @@ while True:
 
     try:
 
+        print("Mapping Count:", len(MAPPING))
+
         prices = get_prices_batch(MAPPING)
 
-        for symbol, d in prices.items():
+        print("API Returned:", len(prices))
+
+        for instrument_key, d in prices.items():
+
+            symbol = next(
+                (
+                    k.replace("NSE_EQ:", "")
+                    for k, v in MAPPING.items()
+                    if v == instrument_key
+                ),
+                instrument_key
+            )
 
             multi_strategy.update(
                 symbol,
@@ -88,7 +93,6 @@ while True:
                 d["volume"]
             )
 
-        # MultiSignal ranking alerts
         multi_strategy.process_top_signals()
 
         print(
