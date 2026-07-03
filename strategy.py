@@ -180,43 +180,42 @@ class MultiSignalStrategy:
         if abs(day_change) < 0.1:
             return
 
-        score = self.calculate_score(
-            price,
-            vwap,
-            day_change,
-            m5
-        )
+      score = self.calculate_score(
+    price,
+    vwap,
+    day_change,
+    m5
+)
 
-        if score >= 22:
+if score >= 22:
 
-            message = f"""
+    message = f"""
 🔥 INSTANT TRADE 🔥
 {symbol} → {direction}
 ₹{round(price,2)}
 ⭐ Score: {score}
 """
 
-            send_alert(message)
+    send_alert(message)
 
-            self.signal_history[
-                f"{symbol}_{direction}"
-            ] = time.time()
+    self.signal_history[
+        f"{symbol}_{direction}"
+    ] = time.time()
 
-            self.last_direction[
-                symbol
-            ] = direction
+    self.last_direction[
+        symbol
+    ] = direction
 
-            return
+    return
 
-        if score >= 15:
+if score >= 18:
 
-            self.candidates.append({
-                "symbol": symbol,
-                "direction": direction,
-                "price": price,
-                "score": score
-            })
-
+    self.candidates.append({
+        "symbol": symbol,
+        "direction": direction,
+        "price": price,
+        "score": score
+    })
     def process_top_signals(self):
 
         if time.time() - self.last_rank_sent < 60:
