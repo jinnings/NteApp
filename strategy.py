@@ -36,6 +36,9 @@ class MultiSignalStrategy:
         # key: symbol  value: {"ema5": float, "ema10": float, "ema20": float}
         self.ema_state = {}
 
+        # Debug mode — set True to print why each signal is dropped
+        self.debug = True
+
     # ------------------------------------------------------------------
 
     def already_sent_recent(self, symbol, direction):
@@ -289,15 +292,20 @@ class MultiSignalStrategy:
 
     # ------------------------------------------------------------------
 
+    def _dbg(self, symbol, reason):
+        """Print drop reason when debug=True."""
+        if self.debug:
+            print(f"[FILTER DROP] {symbol} — {reason}")
+
+    # ------------------------------------------------------------------
+
     def update(self, symbol, price, volume):
 
-        # FIX #17 — check volume is None before comparing
-        if (
-            not symbol
-            or price is None
-            or volume is None
-            or volume < 8000
-        ):
+        if not symbol or price is None or volume is None:
+            return
+
+        if volume < 8000:
+            self._dbg(symbol, f"volume too low: {volume} < 8000")
             return
 
         with self._lock:
@@ -309,68 +317,65 @@ class MultiSignalStrategy:
             volumes = list(self.volume_history[symbol])
 
             if len(prices) < 20:
+                self._dbg(symbol, f"warming up: {len(prices)}/20 prices")
                 return
 
-            # FIX #1 — use same length for prices and volumes in VWAP
+            # VWAP
             length         = min(len(prices), len(volumes))
             recent_prices  = prices[-length:]
             recent_volumes = volumes[-length:]
 
             vol_sum = sum(recent_volumes)
             if vol_sum == 0:
+                self._dbg(symbol, "vol_sum is zero")
                 return
 
             vwap = sum(
                 p * v for p, v in zip(recent_prices, recent_volumes)
             ) / vol_sum
 
-            # ── ROC — Percentage Rate of Change ──────────────────────
-            # Normalises momentum across different price ranges
-            # e.g. ₹100 stock and ₹2000 stock are now comparable
+            # ROC
             base_fast = prices[-3]
             base_slow = prices[-10]
 
             if base_fast == 0 or base_slow == 0:
+                self._dbg(symbol, "base price is zero")
                 return
 
-            m_fast = ((prices[-1] - base_fast) / base_fast) * 100   # short ROC  (%)
-            m_slow = ((prices[-1] - base_slow) / base_slow) * 100   # medium ROC (%)
+            m_fast = ((prices[-1] - base_fast) / base_fast) * 100
+            m_slow = ((prices[-1] - base_slow) / base_slow) * 100
 
-            # ── Momentum Acceleration ────────────────────────────────────
+            # Momentum Acceleration
             acceleration = m_fast - m_slow
 
-            # ── EMA5 / EMA10 / EMA20 ────────────────────────────────────
+            # EMA
             ema5, ema10, ema20 = self.compute_ema(symbol, price)
 
+            # Direction
             dir1 = "BUY" if m_fast > 0 else "SELL"
             dir5 = "BUY" if m_slow > 0 else "SELL"
 
             if dir1 != dir5:
+                self._dbg(symbol, f"direction conflict: fast={dir1} slow={dir5}")
                 return
 
             direction = dir1
 
-            # pullback OR breakout (not both required)
-            pullback = self.is_pullback(prices, direction)
-            breakout = self.is_breakout(prices, direction)
-
-            if not pullback and not breakout:
-                return
-
-            if not self.confirm_candle(prices, direction):
-                return
-
+            # Cooldown
             if self.already_sent_recent(symbol, direction):
+                self._dbg(symbol, "cooldown active")
                 return
 
+            # Direction flip
             prev_dir = self.last_direction.get(symbol)
-
             if prev_dir and prev_dir != direction:
+                self._dbg(symbol, f"direction flip: was {prev_dir} now {direction}")
                 return
 
+            # Day change
             day_change = self.get_day_change(symbol, price)
-
             if abs(day_change) < 0.1:
+                self._dbg(symbol, f"day_change too small: {round(day_change,3)}%")
                 return
 
             score = self.calculate_score(
@@ -409,11 +414,21 @@ class MultiSignalStrategy:
             #
             # ════════════════════════════════════════════════════════════
 
-            vol_increasing = self.is_volume_increasing(symbol)
-            ema_stack_ok   = (ema5 > ema10 > ema20)
+            vol_increasing   = self.is_volume_increasing(symbol)
+            ema_stack_ok     = (ema5 > ema10 > ema20)
             price_above_vwap = (price > vwap)
 
-            # ── HIGH CONFIDENCE check ────────────────────────────────
+            # Live debug print every tick
+            if self.debug:
+                print(
+                    f"[LIVE] {symbol} | dir={direction} | "
+                    f"mf={round(m_fast,3)}% ms={round(m_slow,3)}% "
+                    f"acc={round(acceleration,3)}% | "
+                    f"ema_ok={ema_stack_ok} pvwap={price_above_vwap} "
+                    f"vol_inc={vol_increasing} | score={score}"
+                )
+
+            # HIGH CONFIDENCE
             is_high_confidence = (
                 m_fast       > 1.0
                 and m_slow       > 0.7
@@ -423,7 +438,7 @@ class MultiSignalStrategy:
                 and vol_increasing
             )
 
-            # ── MEDIUM CONFIDENCE check ──────────────────────────────
+            # MEDIUM CONFIDENCE
             is_medium_confidence = (
                 m_fast       > 0.5
                 and m_slow       > 0.3
@@ -433,8 +448,15 @@ class MultiSignalStrategy:
                 and vol_increasing
             )
 
-            # Must meet at least Medium Confidence to proceed
             if not is_medium_confidence:
+                self._dbg(
+                    symbol,
+                    f"confidence failed | "
+                    f"mf={round(m_fast,3)} ms={round(m_slow,3)} "
+                    f"acc={round(acceleration,3)} "
+                    f"ema={ema_stack_ok} vwap={price_above_vwap} "
+                    f"vol={vol_increasing}"
+                )
                 return
 
             # ── Build and send alert based on tier ───────────────────
