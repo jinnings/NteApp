@@ -186,59 +186,64 @@ class MultiSignalStrategy:
         ema10,
         ema20
     ):
+        """
+        Calculates raw score out of 49, then normalises to 0–10.
+        Components:
+          1. Day change        — max 15 pts
+          2. ROC Fast          — max  4 pts
+          3. ROC Slow          — max  4 pts
+          4. Acceleration      — max  6 pts
+          5. VWAP distance     — max 12 pts
+          6. EMA stack         — max  5 pts
+          7. SMA trend         — max  3 pts
+                               ───────────
+                         Total  max 49 pts  → normalised to 10
+        """
 
-        score = 0
+        raw = 0
 
-        # ── 1. Day change — max 15 pts ─────────────────────────────────
-        score += min(abs(day_change) * 4, 15)
+        # 1. Day change — max 15 pts
+        raw += min(abs(day_change) * 4, 15)
 
-        # ── 2. ROC momentum — max 8 pts ────────────────────────────────
+        # 2. ROC Fast — max 4 pts
         if abs(m_fast) > 0.1:
-            score += min(abs(m_fast) * 3, 4)
+            raw += min(abs(m_fast) * 3, 4)
 
+        # 3. ROC Slow — max 4 pts
         if abs(m_slow) > 0.2:
-            score += min(abs(m_slow) * 2, 4)
+            raw += min(abs(m_slow) * 2, 4)
 
-        # ── 3. Momentum Acceleration — max 6 pts ───────────────────────
-        # Positive on BUY  = momentum speeding up
-        # Negative on SELL = selling pressure increasing
+        # 4. Acceleration — max 6 pts
         if direction == "BUY" and acceleration > 0:
-            score += min(acceleration * 3, 6)
+            raw += min(acceleration * 3, 6)
         elif direction == "SELL" and acceleration < 0:
-            score += min(abs(acceleration) * 3, 6)
+            raw += min(abs(acceleration) * 3, 6)
 
-        # ── 4. VWAP distance bonus — max 12 pts ────────────────────────
+        # 5. VWAP distance — max 12 pts
         if vwap > 0:
             vwap_distance_pct = ((price - vwap) / vwap) * 100
-
             if direction == "BUY":
-                if vwap_distance_pct > 0:
-                    score += 8 + min(vwap_distance_pct * 2, 4)
-                else:
-                    score += 4
+                raw += (8 + min(vwap_distance_pct * 2, 4)) if vwap_distance_pct > 0 else 4
             else:
-                if vwap_distance_pct < 0:
-                    score += 8 + min(abs(vwap_distance_pct) * 2, 4)
-                else:
-                    score += 4
+                raw += (8 + min(abs(vwap_distance_pct) * 2, 4)) if vwap_distance_pct < 0 else 4
         else:
-            score += 4
+            raw += 4
 
-        # ── 5. EMA stack alignment — max 5 pts ─────────────────────────
-        # Full stack (EMA5 > EMA10 > EMA20) = 5 pts
-        # Partial crossover only            = 2 pts
+        # 6. EMA stack — max 5 pts
         if self.ema_direction(ema5, ema10, ema20, direction):
-            score += 5
+            raw += 5
         elif self.ema_crossover(ema5, ema10, direction):
-            score += 2
+            raw += 2
 
-        # ── 6. SMA trend alignment — max 3 pts ─────────────────────────
+        # 7. SMA trend — max 3 pts
         prices = list(self.price_history[symbol])
-
         if self.trend_alignment(prices, direction):
-            score += 3
+            raw += 3
 
-        return int(score)
+        # Normalise to 0–10  (max raw = 49)
+        strength = round((raw / 49) * 10, 1)
+
+        return strength
 
     def reset_daily(self):
         """Call this at market open every day."""
@@ -253,12 +258,11 @@ class MultiSignalStrategy:
 
     def update(self, symbol, price, volume):
 
-        if (
-            not symbol
-            or price is None
-            or volume is None
-            or volume < 8000
-        ):
+        if not symbol or price is None or volume is None:
+            return
+
+        # Minimum absolute volume gate — default 20000
+        if volume < 20000:
             return
 
         with self._lock:
@@ -271,6 +275,15 @@ class MultiSignalStrategy:
 
             if len(prices) < 20:
                 return
+
+            # ── Relative Volume filter ─────────────────────────────────────────────────────────
+            # Current volume must be at least 50% of its own 10-bar average
+            # This filters illiquid ticks relative to the stock's own activity
+            # ─────────────────────────────────────────────────────────
+            if len(volumes) >= 10:
+                avg_vol = sum(volumes[-10:]) / 10
+                if avg_vol > 0 and volume < avg_vol * 0.5:
+                    return
 
             # VWAP — aligned length
             length         = min(len(prices), len(volumes))
@@ -320,59 +333,82 @@ class MultiSignalStrategy:
                 return
 
             day_change = self.get_day_change(symbol, price)
-            if abs(day_change) < 0.1:
+            if abs(day_change) < 1.0:   # raised from 0.1% to 1.0%
                 return
 
-            score = self.calculate_score(
+            strength = self.calculate_score(
                 symbol, direction, price, vwap,
                 day_change, m_fast, m_slow, acceleration,
                 ema5, ema10, ema20
             )
 
             # ── Shared indicator flags ────────────────────────────────
-            vol_inc       = self.is_volume_increasing(symbol)
-            ema_full      = (ema5 > ema10 > ema20)  # full bullish stack
-            ema_partial   = (ema5 > ema10)           # partial crossover
-            above_vwap    = (price > vwap)
+            vol_inc = self.is_volume_increasing(symbol)
+
+            if direction == "BUY":
+                ema_full    = (ema5 > ema10 > ema20)  # bullish full stack
+                ema_partial = (ema5 > ema10)           # bullish partial
+                side_vwap   = (price > vwap)           # price above VWAP
+            else:
+                ema_full    = (ema5 < ema10 < ema20)  # bearish full stack
+                ema_partial = (ema5 < ema10)           # bearish partial
+                side_vwap   = (price < vwap)           # price below VWAP
 
             # ════════════════════════════════════════════════════════════
             # TIER 1 — HIGH CONFIDENCE
             # ────────────────────────────────────────────────────────────
-            # ROC Fast     > 0.50%
-            # ROC Slow     > 0.30%
-            # Acceleration > 0.20%
-            # EMA5 > EMA10 > EMA20   full bullish stack
-            # Price > VWAP
-            # Volume Increasing      3 rising bars
+            # BUY  : ROC Fast >0.50% | ROC Slow >0.30% | Accel >0.20%
+            #        EMA5>EMA10>EMA20 | Price>VWAP | Vol Increasing
+            # SELL : ROC Fast <-0.50% | ROC Slow <-0.30% | Accel <-0.20%
+            #        EMA5<EMA10<EMA20 | Price<VWAP | Vol Increasing
             # ════════════════════════════════════════════════════════════
-            is_high = (
-                m_fast       > 0.50
-                and m_slow       > 0.30
-                and acceleration > 0.20
-                and ema_full
-                and above_vwap
-                and vol_inc
-            )
+            if direction == "BUY":
+                is_high = (
+                    m_fast       >  0.50
+                    and m_slow       >  0.30
+                    and acceleration >  0.20
+                    and ema_full
+                    and side_vwap
+                    and vol_inc
+                )
+            else:
+                is_high = (
+                    m_fast       < -0.50
+                    and m_slow       < -0.30
+                    and acceleration < -0.20
+                    and ema_full
+                    and side_vwap
+                    and vol_inc
+                )
 
             # ════════════════════════════════════════════════════════════
             # TIER 2 — MEDIUM CONFIDENCE
             # ────────────────────────────────────────────────────────────
-            # ROC Fast     > 0.20%
-            # ROC Slow     > 0.10%
-            # Acceleration > 0.05%
-            # EMA5 > EMA10           partial crossover
-            # Price > VWAP
-            # Volume Increasing
+            # BUY  : ROC Fast >0.20% | ROC Slow >0.10% | Accel >0.05%
+            #        EMA5>EMA10 | Price>VWAP | Vol Increasing
+            # SELL : ROC Fast <-0.20% | ROC Slow <-0.10% | Accel <-0.05%
+            #        EMA5<EMA10 | Price<VWAP | Vol Increasing
             # ════════════════════════════════════════════════════════════
-            is_medium = (
-                not is_high
-                and m_fast       > 0.20
-                and m_slow       > 0.10
-                and acceleration > 0.05
-                and ema_partial
-                and above_vwap
-                and vol_inc
-            )
+            if direction == "BUY":
+                is_medium = (
+                    not is_high
+                    and m_fast       >  0.20
+                    and m_slow       >  0.10
+                    and acceleration >  0.05
+                    and ema_partial
+                    and side_vwap
+                    and vol_inc
+                )
+            else:
+                is_medium = (
+                    not is_high
+                    and m_fast       < -0.20
+                    and m_slow       < -0.10
+                    and acceleration < -0.05
+                    and ema_partial
+                    and side_vwap
+                    and vol_inc
+                )
 
             # Low confidence — silently dropped, no alert sent
 
@@ -380,34 +416,83 @@ class MultiSignalStrategy:
             if not is_high and not is_medium:
                 return
 
+            # Strength filter — drop weak signals
+            if strength <= 7.0:
+                return
+
             # ── Build message based on tier ──────────────────────────
             if is_high:
-                header    = "🚀 HIGH CONFIDENCE TRADE 🚀"
-                ema_line  = "📊 EMA5 > EMA10 > EMA20  ✅ (Full Stack)"
-                vwap_line = f"💧 Price > VWAP ({round(vwap, 2)})  ✅"
-                vol_line  = "📦 Volume Increasing  ✅"
-
+                header   = "🚀 HIGH CONFIDENCE TRADE 🚀"
+                if direction == "BUY":
+                    ema_line = "📊 EMA5 > EMA10 > EMA20  ✅ (Full Bullish Stack)"
+                else:
+                    ema_line = "📊 EMA5 < EMA10 < EMA20  ✅ (Full Bearish Stack)"
             else:
-                header    = "🟡 MEDIUM CONFIDENCE TRADE 🟡"
-                ema_line  = "📊 EMA5 > EMA10  ✅ (Partial Crossover)"
-                vwap_line = f"💧 Price > VWAP ({round(vwap, 2)})  ✅"
-                vol_line  = "📦 Volume Increasing  ✅"
+                header   = "🟡 MEDIUM CONFIDENCE TRADE 🟡"
+                if direction == "BUY":
+                    ema_line = "📊 EMA5 > EMA10  ✅ (Bullish Crossover)"
+                else:
+                    ema_line = "📊 EMA5 < EMA10  ✅ (Bearish Crossover)"
+
+            # ── VWAP distance ─────────────────────────────────────────────────────────
+            vwap_dist_pct = round(abs((price - vwap) / vwap) * 100, 2)
+            if direction == "BUY":
+                vwap_label = f"💧 VWAP       : ₹{round(vwap, 2)}  (+{vwap_dist_pct}% above)"
+            else:
+                vwap_label = f"💧 VWAP       : ₹{round(vwap, 2)}  (-{vwap_dist_pct}% below)"
+
+            # ── SL Logic ─────────────────────────────────────────────────────────
+            # BUY  SL = lower of VWAP or EMA10  (support below price)
+            # SELL SL = higher of VWAP or EMA10 (resistance above price)
+            # ─────────────────────────────────────────────────────────
+            if direction == "BUY":
+                sl_price  = round(min(vwap, ema10), 2)
+                sl_reason = "VWAP" if vwap <= ema10 else "EMA10"
+                sl_pct    = round(((price - sl_price) / price) * 100, 2)
+                risk      = price - sl_price
+                target    = round(price + (risk * 2), 2)
+                target_pct = round(((target - price) / price) * 100, 2)
+                sl_label  = f"🛡 SL         : ₹{sl_price}  (-{sl_pct}%)"
+                tgt_label = f"🎯 Target      : ₹{target}  (+{target_pct}%)"
+            else:
+                sl_price  = round(max(vwap, ema10), 2)
+                sl_reason = "VWAP" if vwap >= ema10 else "EMA10"
+                sl_pct    = round(((sl_price - price) / price) * 100, 2)
+                risk      = sl_price - price
+                target    = round(price - (risk * 2), 2)
+                target_pct = round(((price - target) / price) * 100, 2)
+                sl_label  = f"🛡 SL         : ₹{sl_price}  (+{sl_pct}%)"
+                tgt_label = f"🎯 Target      : ₹{target}  (-{target_pct}%)"
 
             message = (
                 f"\n{header}\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"{symbol} → {direction}\n"
                 f"₹{round(price, 2)}\n"
-                f"⭐ Score        : {score}\n"
+                f"💪 Strength    : {strength}/10\n"
+                f"\n"
                 f"📈 ROC Fast     : {round(m_fast, 3)}%\n"
                 f"📈 ROC Slow     : {round(m_slow, 3)}%\n"
                 f"⚡ Acceleration : {round(acceleration, 3)}%\n"
+                f"\n"
                 f"{ema_line}\n"
-                f"📊 EMA5  : {round(ema5, 2)}\n"
-                f"📊 EMA10 : {round(ema10, 2)}\n"
-                f"📊 EMA20 : {round(ema20, 2)}\n"
-                f"{vwap_line}\n"
-                f"{vol_line}\n"
+                f"📊 EMA5  : ₹{round(ema5, 2)}\n"
+                f"📊 EMA10 : ₹{round(ema10, 2)}\n"
+                f"📊 EMA20 : ₹{round(ema20, 2)}\n"
+                f"\n"
+                f"{vwap_label}\n"
+                f"\n"
+                f"{sl_label}\n"
+                f"📌 SL Basis    : Above {sl_reason}\n" if direction == "SELL" else
+                f"{sl_label}\n"
+                f"📌 SL Basis    : Below {sl_reason}\n"
+            )
+
+            message += (
+                f"{tgt_label}\n"
+                f"⚖️ Risk:Reward  : 1 : 2\n"
+                f"\n"
+                f"📦 Volume Increasing  ✅\n"
                 f"📅 Day Change : {round(day_change, 2)}%\n"
             )
 
