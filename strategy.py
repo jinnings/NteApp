@@ -333,13 +333,7 @@ class MultiSignalStrategy:
             vol_inc       = self.is_volume_increasing(symbol)
             ema_full      = (ema5 > ema10 > ema20)  # full bullish stack
             ema_partial   = (ema5 > ema10)           # partial crossover
-            ema_neutral   = (ema5 >= ema10)          # flat or just touching
             above_vwap    = (price > vwap)
-            at_vwap       = (price >= vwap)          # at or above
-
-            # volume neutral = last bar not lower than previous
-            vols = list(self.volume_history[symbol])
-            vol_neutral = (len(vols) >= 2 and vols[-1] >= vols[-2])
 
             # ════════════════════════════════════════════════════════════
             # TIER 1 — HIGH CONFIDENCE
@@ -380,29 +374,10 @@ class MultiSignalStrategy:
                 and vol_inc
             )
 
-            # ════════════════════════════════════════════════════════════
-            # TIER 3 — LOW CONFIDENCE
-            # ────────────────────────────────────────────────────────────
-            # ROC Fast     > 0.05%
-            # ROC Slow     > 0%
-            # Acceleration > 0
-            # EMA5 >= EMA10          flat or just crossing
-            # Price >= VWAP          at or above fair value
-            # Volume Neutral or Slightly Increasing
-            # ════════════════════════════════════════════════════════════
-            is_low = (
-                not is_high
-                and not is_medium
-                and m_fast       > 0.05
-                and m_slow       > 0.0
-                and acceleration > 0.0
-                and ema_neutral
-                and at_vwap
-                and vol_neutral
-            )
+            # Low confidence — silently dropped, no alert sent
 
             # No tier matched — drop
-            if not is_high and not is_medium and not is_low:
+            if not is_high and not is_medium:
                 return
 
             # ── Build message based on tier ──────────────────────────
@@ -412,17 +387,11 @@ class MultiSignalStrategy:
                 vwap_line = f"💧 Price > VWAP ({round(vwap, 2)})  ✅"
                 vol_line  = "📦 Volume Increasing  ✅"
 
-            elif is_medium:
+            else:
                 header    = "🟡 MEDIUM CONFIDENCE TRADE 🟡"
                 ema_line  = "📊 EMA5 > EMA10  ✅ (Partial Crossover)"
                 vwap_line = f"💧 Price > VWAP ({round(vwap, 2)})  ✅"
                 vol_line  = "📦 Volume Increasing  ✅"
-
-            else:
-                header    = "🔵 LOW CONFIDENCE TRADE 🔵"
-                ema_line  = "📊 EMA5 >= EMA10  ⚠️ (Neutral / Early Cross)"
-                vwap_line = f"💧 Price >= VWAP ({round(vwap, 2)})  ⚠️"
-                vol_line  = "📦 Volume Neutral / Slight Increase  ⚠️"
 
             message = (
                 f"\n{header}\n"
