@@ -12,6 +12,7 @@ class MultiSignalStrategy:
 
     def __init__(self):
 
+        # FIX #2 — matched maxlen so price[i] aligns with volume[i]
         self.price_history  = defaultdict(lambda: deque(maxlen=100))
         self.volume_history = defaultdict(lambda: deque(maxlen=100))
 
@@ -25,12 +26,17 @@ class MultiSignalStrategy:
         self.candidates     = []
         self.last_rank_sent = 0
 
+        # FIX #15 — thread safety lock
         self._lock = threading.Lock()
 
+        # FIX #11 — max age for candidates (seconds)
         self.MAX_CANDIDATE_AGE = 30
 
         # EMA state — stores last computed EMA per symbol
+        # key: symbol  value: {"ema5": float, "ema10": float, "ema20": float}
         self.ema_state = {}
+
+    # ------------------------------------------------------------------
 
     def already_sent_recent(self, symbol, direction):
 
@@ -41,6 +47,8 @@ class MultiSignalStrategy:
             and time.time() - self.signal_history[key] < self.SIGNAL_COOLDOWN
         )
 
+    # ------------------------------------------------------------------
+
     def get_day_change(self, symbol, price):
 
         if symbol not in self.day_open:
@@ -48,10 +56,13 @@ class MultiSignalStrategy:
 
         open_price = self.day_open[symbol]
 
+        # FIX #3 — division by zero guard
         if open_price == 0:
             return 0.0
 
         return ((price - open_price) / open_price) * 100
+
+    # ------------------------------------------------------------------
 
     def is_volume_increasing(self, symbol):
 
@@ -61,6 +72,8 @@ class MultiSignalStrategy:
             len(vols) >= 3
             and vols[-1] > vols[-2] > vols[-3]
         )
+
+    # ------------------------------------------------------------------
 
     def confirm_candle(self, prices, direction):
 
@@ -72,6 +85,8 @@ class MultiSignalStrategy:
 
         return prices[-1] < prices[-2] < prices[-3]
 
+    # ------------------------------------------------------------------
+
     def is_breakout(self, prices, direction):
 
         if len(prices) < 10:
@@ -81,6 +96,8 @@ class MultiSignalStrategy:
             return prices[-1] > max(prices[-10:-1])
 
         return prices[-1] < min(prices[-10:-1])
+
+    # ------------------------------------------------------------------
 
     def is_pullback(self, prices, direction):
 
@@ -98,13 +115,16 @@ class MultiSignalStrategy:
             and prices[-1] < prices[-2]
         )
 
+    # ------------------------------------------------------------------
+
     def compute_ema(self, symbol, price):
         """
-        Incremental EMA — O(1) per tick.
-        EMA = price * k + prev_ema * (1 - k)
-        k = 2 / (period + 1)
-        Seeds all EMAs with first price on first call.
-        Returns (ema5, ema10, ema20).
+        Incremental EMA calculation — O(1) per tick.
+        EMA = price * k  +  prev_ema * (1 - k)
+        where k = 2 / (period + 1)
+
+        Returns (ema5, ema10, ema20) tuple.
+        On first call seeds all EMAs with current price.
         """
 
         k5  = 2 / (5  + 1)   # 0.3333
@@ -112,6 +132,7 @@ class MultiSignalStrategy:
         k20 = 2 / (20 + 1)   # 0.0952
 
         if symbol not in self.ema_state:
+            # Seed: first price initialises all three EMAs
             self.ema_state[symbol] = {
                 "ema5":  price,
                 "ema10": price,
@@ -128,9 +149,11 @@ class MultiSignalStrategy:
         s = self.ema_state[symbol]
         return s["ema5"], s["ema10"], s["ema20"]
 
+    # ------------------------------------------------------------------
+
     def ema_direction(self, ema5, ema10, ema20, direction):
         """
-        Full EMA stack alignment.
+        EMA stack alignment check.
         BUY  → EMA5 > EMA10 > EMA20  (bullish stack)
         SELL → EMA5 < EMA10 < EMA20  (bearish stack)
         """
@@ -140,11 +163,13 @@ class MultiSignalStrategy:
 
         return ema5 < ema10 < ema20
 
+    # ------------------------------------------------------------------
+
     def ema_crossover(self, ema5, ema10, direction):
         """
-        EMA5 / EMA10 crossover gate.
-        BUY  → EMA5 > EMA10  (golden cross)
-        SELL → EMA5 < EMA10  (death cross)
+        EMA5 / EMA10 crossover signal.
+        BUY  → EMA5 crossed above EMA10 (golden cross)
+        SELL → EMA5 crossed below EMA10 (death cross)
         """
 
         if direction == "BUY":
@@ -152,12 +177,16 @@ class MultiSignalStrategy:
 
         return ema5 < ema10
 
+    # ------------------------------------------------------------------
+
     def vwap_trend(self, price, vwap, direction):
 
         if direction == "BUY":
             return price > vwap
 
         return price < vwap
+
+    # ------------------------------------------------------------------
 
     def trend_alignment(self, prices, direction):
 
@@ -171,6 +200,8 @@ class MultiSignalStrategy:
             return sma10 > sma20
 
         return sma10 < sma20
+
+    # ------------------------------------------------------------------
 
     def calculate_score(
         self,
@@ -193,6 +224,8 @@ class MultiSignalStrategy:
         score += min(abs(day_change) * 4, 15)
 
         # ── 2. ROC momentum — max 8 pts ────────────────────────────────
+        # m_fast: short-term % move  (e.g. 0.5% → 1.5 pts)
+        # m_slow: medium-term % move (e.g. 1.0% → 2.0 pts)
         if abs(m_fast) > 0.1:
             score += min(abs(m_fast) * 3, 4)
 
@@ -200,8 +233,9 @@ class MultiSignalStrategy:
             score += min(abs(m_slow) * 2, 4)
 
         # ── 3. Momentum Acceleration — max 6 pts ───────────────────────
-        # Positive on BUY  = momentum speeding up
-        # Negative on SELL = selling pressure increasing
+        # acceleration = m_fast - m_slow
+        # Positive acceleration on BUY = momentum is speeding up
+        # Negative acceleration on SELL = selling pressure increasing
         if direction == "BUY" and acceleration > 0:
             score += min(acceleration * 3, 6)
         elif direction == "SELL" and acceleration < 0:
@@ -225,8 +259,8 @@ class MultiSignalStrategy:
             score += 4
 
         # ── 5. EMA stack alignment — max 5 pts ─────────────────────────
-        # Full stack (EMA5 > EMA10 > EMA20) = 5 pts
-        # Partial crossover only            = 2 pts
+        # Full stack aligned (EMA5 > EMA10 > EMA20 for BUY) = 5 pts
+        # Partial (only EMA5 > EMA10 crossover)              = 2 pts
         if self.ema_direction(ema5, ema10, ema20, direction):
             score += 5
         elif self.ema_crossover(ema5, ema10, direction):
@@ -240,8 +274,10 @@ class MultiSignalStrategy:
 
         return int(score)
 
+    # ------------------------------------------------------------------
+
     def reset_daily(self):
-        """Call this at market open every day."""
+        """FIX #10 — Call this at market open every day."""
 
         with self._lock:
             self.day_open.clear()
@@ -251,8 +287,11 @@ class MultiSignalStrategy:
             self.ema_state.clear()
             self.last_rank_sent = 0
 
+    # ------------------------------------------------------------------
+
     def update(self, symbol, price, volume):
 
+        # FIX #17 — check volume is None before comparing
         if (
             not symbol
             or price is None
@@ -272,7 +311,7 @@ class MultiSignalStrategy:
             if len(prices) < 20:
                 return
 
-            # VWAP — aligned length
+            # FIX #1 — use same length for prices and volumes in VWAP
             length         = min(len(prices), len(volumes))
             recent_prices  = prices[-length:]
             recent_volumes = volumes[-length:]
@@ -285,23 +324,22 @@ class MultiSignalStrategy:
                 p * v for p, v in zip(recent_prices, recent_volumes)
             ) / vol_sum
 
-            # ROC — Percentage Rate of Change
+            # ── ROC — Percentage Rate of Change ──────────────────────
+            # Normalises momentum across different price ranges
+            # e.g. ₹100 stock and ₹2000 stock are now comparable
             base_fast = prices[-3]
             base_slow = prices[-10]
 
             if base_fast == 0 or base_slow == 0:
                 return
 
-            m_fast = ((prices[-1] - base_fast) / base_fast) * 100
-            m_slow = ((prices[-1] - base_slow) / base_slow) * 100
+            m_fast = ((prices[-1] - base_fast) / base_fast) * 100   # short ROC  (%)
+            m_slow = ((prices[-1] - base_slow) / base_slow) * 100   # medium ROC (%)
 
-            if m_fast == 0 or m_slow == 0:
-                return
-
-            # Momentum Acceleration
+            # ── Momentum Acceleration ────────────────────────────────────
             acceleration = m_fast - m_slow
 
-            # EMA5 / EMA10 / EMA20
+            # ── EMA5 / EMA10 / EMA20 ────────────────────────────────────
             ema5, ema10, ema20 = self.compute_ema(symbol, price)
 
             dir1 = "BUY" if m_fast > 0 else "SELL"
@@ -312,21 +350,11 @@ class MultiSignalStrategy:
 
             direction = dir1
 
-            # EMA crossover gate — must agree with ROC direction
-            if not self.ema_crossover(ema5, ema10, direction):
-                return
-
-            if not self.vwap_trend(price, vwap, direction):
-                return
-
-            # Pullback OR Breakout (not both required)
+            # pullback OR breakout (not both required)
             pullback = self.is_pullback(prices, direction)
             breakout = self.is_breakout(prices, direction)
 
             if not pullback and not breakout:
-                return
-
-            if not self.is_volume_increasing(symbol):
                 return
 
             if not self.confirm_candle(prices, direction):
@@ -359,19 +387,74 @@ class MultiSignalStrategy:
                 ema20
             )
 
-            if score >= 22:
+            # ════════════════════════════════════════════════════════════
+            # CONFIDENCE TIER DETECTION
+            # ════════════════════════════════════════════════════════════
+            #
+            # HIGH CONFIDENCE (Blind Trade) — ALL 6 conditions must pass:
+            #   ROC Fast     > 1.0%   (strong short momentum)
+            #   ROC Slow     > 0.7%   (strong medium momentum)
+            #   Acceleration > 0.5%   (momentum clearly speeding up)
+            #   EMA5 > EMA10 > EMA20  (full bullish EMA stack)
+            #   Price > VWAP          (above fair value)
+            #   Volume increasing     (3 consecutive rising bars)
+            #
+            # MEDIUM CONFIDENCE — ALL 6 conditions must pass:
+            #   ROC Fast     > 0.5%
+            #   ROC Slow     > 0.3%
+            #   Acceleration > 0.2%
+            #   EMA5 > EMA10 > EMA20
+            #   Price > VWAP
+            #   Volume increasing
+            #
+            # ════════════════════════════════════════════════════════════
+
+            vol_increasing = self.is_volume_increasing(symbol)
+            ema_stack_ok   = (ema5 > ema10 > ema20)
+            price_above_vwap = (price > vwap)
+
+            # ── HIGH CONFIDENCE check ────────────────────────────────
+            is_high_confidence = (
+                m_fast       > 1.0
+                and m_slow       > 0.7
+                and acceleration > 0.5
+                and ema_stack_ok
+                and price_above_vwap
+                and vol_increasing
+            )
+
+            # ── MEDIUM CONFIDENCE check ──────────────────────────────
+            is_medium_confidence = (
+                m_fast       > 0.5
+                and m_slow       > 0.3
+                and acceleration > 0.2
+                and ema_stack_ok
+                and price_above_vwap
+                and vol_increasing
+            )
+
+            # Must meet at least Medium Confidence to proceed
+            if not is_medium_confidence:
+                return
+
+            # ── Build and send alert based on tier ───────────────────
+            if is_high_confidence:
 
                 message = (
-                    f"\n🔥 INSTANT TRADE 🔥\n"
+                    f"\n🚀 HIGH CONFIDENCE TRADE 🚀\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                     f"{symbol} → {direction}\n"
                     f"₹{round(price, 2)}\n"
                     f"⭐ Score        : {score}\n"
-                    f"📈 ROC Fast     : {round(m_fast, 3)}%\n"
-                    f"📈 ROC Slow     : {round(m_slow, 3)}%\n"
-                    f"⚡ Acceleration : {round(acceleration, 3)}%\n"
-                    f"📊 EMA5         : {round(ema5, 2)}\n"
-                    f"📊 EMA10        : {round(ema10, 2)}\n"
-                    f"📊 EMA20        : {round(ema20, 2)}\n"
+                    f"📈 ROC Fast     : {round(m_fast, 3)}%  ✅ (>1.0%)\n"
+                    f"📈 ROC Slow     : {round(m_slow, 3)}%  ✅ (>0.7%)\n"
+                    f"⚡ Acceleration : {round(acceleration, 3)}%  ✅ (>0.5%)\n"
+                    f"📊 EMA5 > EMA10 > EMA20  ✅\n"
+                    f"📊 EMA5  : {round(ema5, 2)}\n"
+                    f"📊 EMA10 : {round(ema10, 2)}\n"
+                    f"📊 EMA20 : {round(ema20, 2)}\n"
+                    f"💧 Price > VWAP  ✅\n"
+                    f"📦 Volume Increasing  ✅\n"
                 )
 
                 try:
@@ -380,39 +463,33 @@ class MultiSignalStrategy:
                     self.signal_history[f"{symbol}_{direction}"] = time.time()
                     self.last_direction[symbol] = direction
 
-                return
+            else:
 
-            if score >= 18:
-
-                existing = next(
-                    (
-                        c for c in self.candidates
-                        if c["symbol"] == symbol
-                        and c["direction"] == direction
-                    ),
-                    None
+                # Medium confidence — queue as candidate for TOP TRADE
+                message = (
+                    f"\n🟡 MEDIUM CONFIDENCE TRADE 🟡\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"{symbol} → {direction}\n"
+                    f"₹{round(price, 2)}\n"
+                    f"⭐ Score        : {score}\n"
+                    f"📈 ROC Fast     : {round(m_fast, 3)}%  ✅ (>0.5%)\n"
+                    f"📈 ROC Slow     : {round(m_slow, 3)}%  ✅ (>0.3%)\n"
+                    f"⚡ Acceleration : {round(acceleration, 3)}%  ✅ (>0.2%)\n"
+                    f"📊 EMA5 > EMA10 > EMA20  ✅\n"
+                    f"📊 EMA5  : {round(ema5, 2)}\n"
+                    f"📊 EMA10 : {round(ema10, 2)}\n"
+                    f"📊 EMA20 : {round(ema20, 2)}\n"
+                    f"💧 Price > VWAP  ✅\n"
+                    f"📦 Volume Increasing  ✅\n"
                 )
 
-                if existing:
-                    if score > existing["score"]:
-                        existing["score"]     = score
-                        existing["price"]     = price
-                        existing["timestamp"] = time.time()
-                else:
-                    self.candidates.append({
-                        "symbol":    symbol,
-                        "direction": direction,
-                        "price":     price,
-                        "score":     score,
-                        "timestamp": time.time()
-                    })
+                try:
+                    send_alert(message)
+                finally:
+                    self.signal_history[f"{symbol}_{direction}"] = time.time()
+                    self.last_direction[symbol] = direction
 
-                if len(self.candidates) > 100:
-                    self.candidates = sorted(
-                        self.candidates,
-                        key=lambda x: x["score"],
-                        reverse=True
-                    )[:50]
+    # ------------------------------------------------------------------
 
     def process_top_signals(self):
 
@@ -426,6 +503,7 @@ class MultiSignalStrategy:
 
             now = time.time()
 
+            # FIX #11 — filter out stale candidates
             fresh = [
                 c for c in self.candidates
                 if now - c["timestamp"] < self.MAX_CANDIDATE_AGE
@@ -460,6 +538,7 @@ class MultiSignalStrategy:
                     f"(Queued signal — price may have moved)\n"
                 )
 
+                # FIX #16 — always record signal even if send_alert fails
                 try:
                     send_alert(message)
                 finally:
@@ -487,7 +566,10 @@ class PullbackStrategy:
         self.signal_history = {}
         self.SIGNAL_COOLDOWN = 1800  # 30 min
 
+        # FIX #15 — thread safety lock
         self._lock = threading.Lock()
+
+    # ------------------------------------------------------------------
 
     def already_sent_recent(self, symbol):
 
@@ -496,6 +578,8 @@ class PullbackStrategy:
             and time.time() - self.signal_history[symbol] < self.SIGNAL_COOLDOWN
         )
 
+    # ------------------------------------------------------------------
+
     def get_day_change(self, symbol, price):
 
         if symbol not in self.day_open:
@@ -503,10 +587,13 @@ class PullbackStrategy:
 
         open_price = self.day_open[symbol]
 
+        # FIX #3 — division by zero guard
         if open_price == 0:
             return 0.0
 
         return ((price - open_price) / open_price) * 100
+
+    # ------------------------------------------------------------------
 
     def volume_increasing(self, symbol):
 
@@ -516,6 +603,8 @@ class PullbackStrategy:
             return False
 
         return vols[-1] > vols[-2] > vols[-3]
+
+    # ------------------------------------------------------------------
 
     def volume_spike(self, symbol):
 
@@ -528,11 +617,14 @@ class PullbackStrategy:
 
         return vols[-1] > avg_vol * 1.5
 
+    # ------------------------------------------------------------------
+
     def strong_buying(self, prices):
 
         if len(prices) < 6:
             return False
 
+        # FIX #4 — division by zero guard
         if prices[-6] == 0:
             return False
 
@@ -540,11 +632,14 @@ class PullbackStrategy:
 
         return move > 1
 
+    # ------------------------------------------------------------------
+
     def bullish_candle(self, prices):
 
         if len(prices) < 2:
             return False
 
+        # FIX #4 — division by zero guard
         if prices[-2] == 0:
             return False
 
@@ -552,12 +647,16 @@ class PullbackStrategy:
 
         return candle_move > 0.5
 
+    # ------------------------------------------------------------------
+
     def break_previous_high(self, prices):
 
         if len(prices) < 2:
             return False
 
         return prices[-1] > prices[-2]
+
+    # ------------------------------------------------------------------
 
     def break_resistance(self, prices):
 
@@ -568,11 +667,14 @@ class PullbackStrategy:
 
         return prices[-1] > resistance
 
+    # ------------------------------------------------------------------
+
     def pullback_recovery(self, prices):
 
         if len(prices) < 10:
             return False
 
+        # FIX #5 — guard against empty slices
         slice_high = prices[-10:-4]
         slice_low  = prices[-4:-1]
 
@@ -582,6 +684,7 @@ class PullbackStrategy:
         swing_high   = max(slice_high)
         pullback_low = min(slice_low)
 
+        # FIX #3 — division by zero guard
         if swing_high == 0:
             return False
 
@@ -592,19 +695,25 @@ class PullbackStrategy:
 
         return prices[-1] > prices[-2]
 
+    # ------------------------------------------------------------------
+
     def near_day_high(self, symbol, price):
 
         day_high = self.day_high.get(symbol, price)
 
         return price >= day_high * 0.97
 
+    # ------------------------------------------------------------------
+
     def reset_daily(self):
-        """Call this at market open every day."""
+        """FIX #10 — Call this at market open every day."""
 
         with self._lock:
             self.day_open.clear()
             self.day_high.clear()
             self.signal_history.clear()
+
+    # ------------------------------------------------------------------
 
     def update(self, symbol, price, volume):
 
@@ -682,6 +791,7 @@ class PullbackStrategy:
                 f"✅ Near Day High / Resistance Break\n"
             )
 
+            # FIX #16 — always record signal even if send_alert fails
             try:
                 send_alert(message)
             finally:
@@ -697,12 +807,17 @@ class JinningEffectStrategy:
     def __init__(self):
 
         self.close_history  = defaultdict(lambda: deque(maxlen=150))
+
+        # FIX #6 — increased maxlen to match close_history
         self.volume_history = defaultdict(lambda: deque(maxlen=150))
 
         self.signal_history  = {}
         self.SIGNAL_COOLDOWN = 1800  # 30 min
 
+        # FIX #15 — thread safety lock
         self._lock = threading.Lock()
+
+    # ------------------------------------------------------------------
 
     def already_sent_recent(self, symbol):
 
@@ -711,11 +826,15 @@ class JinningEffectStrategy:
             and time.time() - self.signal_history[symbol] < self.SIGNAL_COOLDOWN
         )
 
+    # ------------------------------------------------------------------
+
     def reset_daily(self):
-        """Call this at market open every day."""
+        """FIX #10 — Call this at market open every day."""
 
         with self._lock:
             self.signal_history.clear()
+
+    # ------------------------------------------------------------------
 
     def update_daily(self, symbol, close_price, volume):
 
@@ -730,10 +849,11 @@ class JinningEffectStrategy:
             closes  = list(self.close_history[symbol])
             volumes = list(self.volume_history[symbol])
 
+            # Need enough history
             if len(closes) < 130:
                 return
 
-            # CONDITION 1 — 5-day high > 120-day high + 5%
+            # CONDITION 1 — 5-day high must be > 120-day high + 5%
             recent_5_max = max(closes[-5:])
             past_120_max = max(closes[-126:-6])
 
@@ -743,7 +863,7 @@ class JinningEffectStrategy:
             if recent_5_max <= past_120_max * 1.05:
                 return
 
-            # CONDITION 2 — current volume > 5-day average
+            # CONDITION 2 — current volume must exceed 5-day average
             if len(volumes) < 6:
                 return
 
@@ -772,6 +892,7 @@ class JinningEffectStrategy:
                 f"✅ Strong Closing\n"
             )
 
+            # FIX #16 — always record signal even if send_alert fails
             try:
                 send_alert(message)
             finally:
