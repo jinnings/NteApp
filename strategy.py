@@ -18,7 +18,7 @@ class MultiSignalStrategy:
         self.last_direction = {}
 
         self.signal_history = {}
-        self.SIGNAL_COOLDOWN = 900  # 15 min
+        self.SIGNAL_COOLDOWN = 1800  # 30 min — increased from 15 min
 
         self.day_open = {}
 
@@ -312,107 +312,141 @@ class MultiSignalStrategy:
 
             direction = dir1
 
-            # EMA crossover gate — must agree with ROC direction
-            if not self.ema_crossover(ema5, ema10, direction):
-                return
-
-            if not self.vwap_trend(price, vwap, direction):
-                return
-
-            # Pullback OR Breakout (not both required)
-            pullback = self.is_pullback(prices, direction)
-            breakout = self.is_breakout(prices, direction)
-
-            if not pullback and not breakout:
-                return
-
-            if not self.is_volume_increasing(symbol):
-                return
-
-            if not self.confirm_candle(prices, direction):
-                return
-
             if self.already_sent_recent(symbol, direction):
                 return
 
             prev_dir = self.last_direction.get(symbol)
-
             if prev_dir and prev_dir != direction:
                 return
 
             day_change = self.get_day_change(symbol, price)
-
             if abs(day_change) < 0.1:
                 return
 
             score = self.calculate_score(
-                symbol,
-                direction,
-                price,
-                vwap,
-                day_change,
-                m_fast,
-                m_slow,
-                acceleration,
-                ema5,
-                ema10,
-                ema20
+                symbol, direction, price, vwap,
+                day_change, m_fast, m_slow, acceleration,
+                ema5, ema10, ema20
             )
 
-            if score >= 22:
+            # ── Shared indicator flags ────────────────────────────────
+            vol_inc       = self.is_volume_increasing(symbol)
+            ema_full      = (ema5 > ema10 > ema20)  # full bullish stack
+            ema_partial   = (ema5 > ema10)           # partial crossover
+            ema_neutral   = (ema5 >= ema10)          # flat or just touching
+            above_vwap    = (price > vwap)
+            at_vwap       = (price >= vwap)          # at or above
 
-                message = (
-                    f"\n🔥 INSTANT TRADE 🔥\n"
-                    f"{symbol} → {direction}\n"
-                    f"₹{round(price, 2)}\n"
-                    f"⭐ Score        : {score}\n"
-                    f"📈 ROC Fast     : {round(m_fast, 3)}%\n"
-                    f"📈 ROC Slow     : {round(m_slow, 3)}%\n"
-                    f"⚡ Acceleration : {round(acceleration, 3)}%\n"
-                    f"📊 EMA5         : {round(ema5, 2)}\n"
-                    f"📊 EMA10        : {round(ema10, 2)}\n"
-                    f"📊 EMA20        : {round(ema20, 2)}\n"
-                )
+            # volume neutral = last bar not lower than previous
+            vols = list(self.volume_history[symbol])
+            vol_neutral = (len(vols) >= 2 and vols[-1] >= vols[-2])
 
-                try:
-                    send_alert(message)
-                finally:
-                    self.signal_history[f"{symbol}_{direction}"] = time.time()
-                    self.last_direction[symbol] = direction
+            # ════════════════════════════════════════════════════════════
+            # TIER 1 — HIGH CONFIDENCE
+            # ────────────────────────────────────────────────────────────
+            # ROC Fast     > 0.50%
+            # ROC Slow     > 0.30%
+            # Acceleration > 0.20%
+            # EMA5 > EMA10 > EMA20   full bullish stack
+            # Price > VWAP
+            # Volume Increasing      3 rising bars
+            # ════════════════════════════════════════════════════════════
+            is_high = (
+                m_fast       > 0.50
+                and m_slow       > 0.30
+                and acceleration > 0.20
+                and ema_full
+                and above_vwap
+                and vol_inc
+            )
 
+            # ════════════════════════════════════════════════════════════
+            # TIER 2 — MEDIUM CONFIDENCE
+            # ────────────────────────────────────────────────────────────
+            # ROC Fast     > 0.20%
+            # ROC Slow     > 0.10%
+            # Acceleration > 0.05%
+            # EMA5 > EMA10           partial crossover
+            # Price > VWAP
+            # Volume Increasing
+            # ════════════════════════════════════════════════════════════
+            is_medium = (
+                not is_high
+                and m_fast       > 0.20
+                and m_slow       > 0.10
+                and acceleration > 0.05
+                and ema_partial
+                and above_vwap
+                and vol_inc
+            )
+
+            # ════════════════════════════════════════════════════════════
+            # TIER 3 — LOW CONFIDENCE
+            # ────────────────────────────────────────────────────────────
+            # ROC Fast     > 0.05%
+            # ROC Slow     > 0%
+            # Acceleration > 0
+            # EMA5 >= EMA10          flat or just crossing
+            # Price >= VWAP          at or above fair value
+            # Volume Neutral or Slightly Increasing
+            # ════════════════════════════════════════════════════════════
+            is_low = (
+                not is_high
+                and not is_medium
+                and m_fast       > 0.05
+                and m_slow       > 0.0
+                and acceleration > 0.0
+                and ema_neutral
+                and at_vwap
+                and vol_neutral
+            )
+
+            # No tier matched — drop
+            if not is_high and not is_medium and not is_low:
                 return
 
-            if score >= 18:
+            # ── Build message based on tier ──────────────────────────
+            if is_high:
+                header    = "🚀 HIGH CONFIDENCE TRADE 🚀"
+                ema_line  = "📊 EMA5 > EMA10 > EMA20  ✅ (Full Stack)"
+                vwap_line = f"💧 Price > VWAP ({round(vwap, 2)})  ✅"
+                vol_line  = "📦 Volume Increasing  ✅"
 
-                existing = next(
-                    (
-                        c for c in self.candidates
-                        if c["symbol"] == symbol
-                        and c["direction"] == direction
-                    ),
-                    None
-                )
+            elif is_medium:
+                header    = "🟡 MEDIUM CONFIDENCE TRADE 🟡"
+                ema_line  = "📊 EMA5 > EMA10  ✅ (Partial Crossover)"
+                vwap_line = f"💧 Price > VWAP ({round(vwap, 2)})  ✅"
+                vol_line  = "📦 Volume Increasing  ✅"
 
-                if existing:
-                    if score > existing["score"]:
-                        existing["score"]     = score
-                        existing["price"]     = price
-                        existing["timestamp"] = time.time()
-                else:
-                    self.candidates.append({
-                        "symbol":    symbol,
-                        "direction": direction,
-                        "price":     price,
-                        "score":     score,
-                        "timestamp": time.time()
-                    })
+            else:
+                header    = "🔵 LOW CONFIDENCE TRADE 🔵"
+                ema_line  = "📊 EMA5 >= EMA10  ⚠️ (Neutral / Early Cross)"
+                vwap_line = f"💧 Price >= VWAP ({round(vwap, 2)})  ⚠️"
+                vol_line  = "📦 Volume Neutral / Slight Increase  ⚠️"
 
-                if len(self.candidates) > 100:
-                    self.candidates = sorted(
-                        self.candidates,
-                        key=lambda x: x["score"],
-                        reverse=True
-                    )[:50]
+            message = (
+                f"\n{header}\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"{symbol} → {direction}\n"
+                f"₹{round(price, 2)}\n"
+                f"⭐ Score        : {score}\n"
+                f"📈 ROC Fast     : {round(m_fast, 3)}%\n"
+                f"📈 ROC Slow     : {round(m_slow, 3)}%\n"
+                f"⚡ Acceleration : {round(acceleration, 3)}%\n"
+                f"{ema_line}\n"
+                f"📊 EMA5  : {round(ema5, 2)}\n"
+                f"📊 EMA10 : {round(ema10, 2)}\n"
+                f"📊 EMA20 : {round(ema20, 2)}\n"
+                f"{vwap_line}\n"
+                f"{vol_line}\n"
+                f"📅 Day Change : {round(day_change, 2)}%\n"
+            )
+
+            try:
+                send_alert(message)
+            finally:
+                self.signal_history[f"{symbol}_{direction}"] = time.time()
+                self.last_direction[symbol] = direction
 
     def process_top_signals(self):
 
@@ -485,7 +519,7 @@ class PullbackStrategy:
         self.day_high = {}
 
         self.signal_history = {}
-        self.SIGNAL_COOLDOWN = 1800  # 30 min
+        self.SIGNAL_COOLDOWN = 2700  # 45 min — increased from 30 min
 
         self._lock = threading.Lock()
 
@@ -526,7 +560,8 @@ class PullbackStrategy:
 
         avg_vol = sum(vols[-6:-1]) / 5
 
-        return vols[-1] > avg_vol * 1.5
+        # Raised from 1.5x to 2.0x — only genuine volume surges
+        return vols[-1] > avg_vol * 2.0
 
     def strong_buying(self, prices):
 
@@ -635,7 +670,8 @@ class PullbackStrategy:
 
             day_change = self.get_day_change(symbol, price)
 
-            if day_change < 4:
+            # Raised from 4% to 5% — filters weaker moves
+            if day_change < 5:
                 return
 
             if self.already_sent_recent(symbol):
@@ -700,7 +736,7 @@ class JinningEffectStrategy:
         self.volume_history = defaultdict(lambda: deque(maxlen=150))
 
         self.signal_history  = {}
-        self.SIGNAL_COOLDOWN = 1800  # 30 min
+        self.SIGNAL_COOLDOWN = 3600  # 60 min — increased from 30 min
 
         self._lock = threading.Lock()
 
