@@ -456,6 +456,8 @@ class MultiSignalStrategy:
                 sl_label  = f"🛡 SL         : ₹{sl_price}  (+{sl_pct}%)"
                 tgt_label = f"🎯 Target      : ₹{target}  (-{target_pct}%)"
 
+            sl_basis = f"📌 SL Basis    : Above {sl_reason}" if direction == "SELL" else f"📌 SL Basis    : Below {sl_reason}"
+
             message = (
                 f"\n{header}\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -475,12 +477,7 @@ class MultiSignalStrategy:
                 f"{vwap_label}\n"
                 f"\n"
                 f"{sl_label}\n"
-                f"📌 SL Basis    : Above {sl_reason}\n" if direction == "SELL" else
-                f"{sl_label}\n"
-                f"📌 SL Basis    : Below {sl_reason}\n"
-            )
-
-            message += (
+                f"{sl_basis}\n"
                 f"{tgt_label}\n"
                 f"⚖️ Risk:Reward  : 1 : 2\n"
                 f"\n"
