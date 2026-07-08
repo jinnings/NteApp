@@ -314,10 +314,7 @@ class MultiSignalStrategy:
             dir_fast = "BUY" if m_fast > 0 else "SELL"
             dir_slow = "BUY" if m_slow > 0 else "SELL"
 
-            if dir_fast != dir_slow:
-                print(f"[DROP] {symbol} | direction conflict fast={dir_fast} slow={dir_slow}")
-                return
-
+            # Use fast ROC as primary direction — slow conflict handled in tier conditions
             direction = dir_fast
 
             if self.already_sent_recent(symbol, direction):
@@ -325,8 +322,8 @@ class MultiSignalStrategy:
                 return
 
             day_change = self.get_day_change(symbol, price)
-            if abs(day_change) < 1.0:
-                print(f"[DROP] {symbol} | day_change {round(day_change,3)}% < 1.0%")
+            if abs(day_change) < 0.3:   # lowered — market may be flat/sideways
+                print(f"[DROP] {symbol} | day_change {round(day_change,3)}% < 0.3%")
                 return
 
             strength = self.calculate_score(
@@ -411,8 +408,8 @@ class MultiSignalStrategy:
                 )
                 return
 
-            if strength <= 6.0:
-                print(f"[DROP] {symbol} | strength {strength} <= 6.0")
+            if strength <= 5.0:
+                print(f"[DROP] {symbol} | strength {strength} <= 5.0")
                 return
 
             # ── Build message based on tier ──────────────────────────
