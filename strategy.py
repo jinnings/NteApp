@@ -1,6 +1,7 @@
 from collections import defaultdict, deque
 import threading
 import time
+import requests
 from alerts import send_alert
 
 
@@ -904,3 +905,93 @@ class JinningEffectStrategy:
                 send_alert(message)
             finally:
                 self.signal_history[symbol] = time.time()
+
+
+# =========================
+# ✅ NSE MARKET MOVERS
+# =========================
+
+class NSEMarketMovers:
+
+    def __init__(self):
+        self.session   = requests.Session()
+        self.last_sent = 0
+        self.INTERVAL  = 120  # 2 minutes
+        self.headers   = {
+            "User-Agent": "Mozilla/5.0"
+        }
+
+    def run(self):
+        if time.time() - self.last_sent < self.INTERVAL:
+            return
+        try:
+            self.session.get(
+                "https://www.nseindia.com",
+                headers=self.headers,
+                timeout=10
+            )
+            gainers = self.session.get(
+                "https://www.nseindia.com/api/live-analysis-variations?index=gainers",
+                headers=self.headers,
+                timeout=10
+            ).json()
+            losers = self.session.get(
+                "https://www.nseindia.com/api/live-analysis-variations?index=losers",
+                headers=self.headers,
+                timeout=10
+            ).json()
+
+            gainers_list = []
+            losers_list  = []
+
+            for v in gainers.values():
+                if isinstance(v, list):
+                    gainers_list.extend(v)
+            for v in losers.values():
+                if isinstance(v, list):
+                    losers_list.extend(v)
+
+            gainers_list = sorted(
+                gainers_list,
+                key=lambda x: float(x.get("perChange", 0)),
+                reverse=True
+            )[:10]
+            losers_list = sorted(
+                losers_list,
+                key=lambda x: float(x.get("perChange", 0))
+            )[:10]
+
+            msg = "📈 TOP 10 GAINERS\n\n"
+            for i, s in enumerate(gainers_list, 1):
+                msg += f"{i}. {s['symbol']} ({s['perChange']}%)\n"
+
+            msg += "\n📉 TOP 10 LOSERS\n\n"
+            for i, s in enumerate(losers_list, 1):
+                msg += f"{i}. {s['symbol']} ({s['perChange']}%)\n"
+
+            send_alert(msg)
+            self.last_sent = time.time()
+
+        except Exception as e:
+            print("[MARKET MOVERS ERROR]", e)
+
+
+multi_strategy    = MultiSignalStrategy()
+pullback_strategy = PullbackStrategy()
+jinning_strategy  = JinningEffectStrategy()
+market_movers     = NSEMarketMovers()
+
+
+def market_movers_worker():
+    while True:
+        try:
+            market_movers.run()
+        except Exception as e:
+            print("[MOVERS THREAD ERROR]", e)
+        time.sleep(10)
+
+
+threading.Thread(
+    target=market_movers_worker,
+    daemon=True
+).start()
